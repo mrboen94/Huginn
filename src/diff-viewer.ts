@@ -62,15 +62,19 @@ class UnifiedDiffServer {
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (request.params.name === "visualize_diff_image") {
-        return await this.generateDiffVisualization(request.params.arguments);
+        return await this.generateDiffVisualization(request.params.arguments ?? {});
       }
 
       throw new Error(`Unknown tool: ${request.params.name}`);
     });
   }
 
-  private async generateDiffVisualization(args: any) {
-    const { diff, format = "html", outputType = "side-by-side" } = args;
+  private async generateDiffVisualization(args: Record<string, unknown>) {
+    const { diff, format = "html", outputType = "side-by-side" } = args as {
+      diff: string;
+      format?: 'html' | 'image';
+      outputType?: 'side-by-side' | 'line-by-line';
+    };
 
     try {
       const html = diffToHtml(diff, {
@@ -133,12 +137,12 @@ class UnifiedDiffServer {
           ],
         };
       }
-    } catch (error) {
+    } catch (err) {
       return {
         content: [
           {
             type: "text",
-            text: ` Error generating diff: ${error}`,
+            text: `Error generating diff: ${String(err)}`,
           },
         ],
       };

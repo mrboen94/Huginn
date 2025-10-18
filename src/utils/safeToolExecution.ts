@@ -18,9 +18,9 @@ export async function safeToolExecution(
   toolName: string,
   handler: (
     signal: AbortSignal,
-  ) => Promise<{ content: any[]; isError?: boolean }>,
+  ) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>,
   options?: SafeToolOptions,
-): Promise<{ content: any[]; isError?: boolean }> {
+): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
   const startTime = Date.now();
   const timeoutMs =
     options?.timeoutMs ??
@@ -29,7 +29,7 @@ export async function safeToolExecution(
       : 10000);
 
   const controller = new AbortController();
-  let timeoutHandle: Timer | undefined;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {

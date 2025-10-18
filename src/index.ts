@@ -23,6 +23,11 @@ class MyMCPServer {
       },
     );
 
+    this.initialize();
+  }
+
+  private async initialize() {
+    await toolRegistry.init();
     this.setupHandlers();
   }
 
@@ -47,7 +52,7 @@ class MyMCPServer {
             },
           ],
           tools: availableTools,
-        } as unknown as Record<string, any>;
+        } as unknown as Record<string, unknown>;
       }
 
       const args = request.params.arguments ?? {};

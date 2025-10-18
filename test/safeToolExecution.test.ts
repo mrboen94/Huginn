@@ -30,7 +30,7 @@ describe('safeToolExecution', () => {
   it('should handle timeout with proper error response and async logging', async () => {
     const handler = async (
       signal: AbortSignal,
-    ): Promise<{ content: any[]; isError?: boolean }> => {
+    ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> => {
       return new Promise((resolve) => {
         const timeout = setTimeout(() => {
           resolve({ content: [{ type: 'text', text: 'Never reached' }] });
@@ -73,9 +73,8 @@ describe('safeToolExecution', () => {
   });
 
   it('should handle handler errors with proper error response and async logging', async () => {
-    const testError = new Error('Test error message');
-    const handler = async () => {
-      throw testError;
+    const handler = async (): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> => {
+      throw new Error('Test error message');
     };
 
     const result = await safeToolExecution('test-tool', handler, {

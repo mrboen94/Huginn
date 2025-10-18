@@ -60,13 +60,14 @@ Everything revolves around this simple contract, mess it up, and Huginn will pol
 
 Think of it as OpenAPI’s introverted cousin — minimal, yet oddly particular.
 
-## Getting Started - Let’s see if it even runs
+## Getting Started - Let's see if it even runs
 
 ```shell
 bun install
-bun run src/index.ts # starts the MCP server (stdio transport)
-# dev: bun run dev
-# tests: bun x vitest --run && bun x tsc --noEmit
+bun install-plugins    # discover and install plugin dependencies
+bun start              # starts the MCP server (stdio transport)
+# dev: bun dev
+# tests: bun test && bun typecheck
 ```
 
 Press <kbd>Ctrl</kbd>+<kbd>C</kbd> to stop it like a civilized human, not by closing the terminal window.
@@ -74,24 +75,36 @@ Press <kbd>Ctrl</kbd>+<kbd>C</kbd> to stop it like a civilized human, not by clo
 <details>
 <summary>
 <strong>
-More explicit than needed
+Available scripts
 </strong>
 </summary>
 
-# install
+```shell
+# Install dependencies
 bun install
 
-# start
+# Start the MCP server
+bun start
 
-```fish
-bun run src/index.ts
-```
+# Development with watch mode
+bun dev
 
-# run tests
+# Run tests
+bun test
+bun test:watch     # watch mode
+bun coverage       # with coverage
 
-```
-bun x vitest --run
-bun x tsc --noEmit
+# Type checking
+bun typecheck
+
+# Linting & formatting
+bun lint
+bun lint:fix
+bun format
+bun format:write
+
+# Install MCP plugins
+bun install-plugins
 ```
 
 </details>
@@ -121,6 +134,56 @@ Example
 </details>
 
 Write a test in `test/`, because future you will forget what this tool does.
+
+## Plugin System - For the modular minded
+
+Huginn supports a plugin architecture for organizing tools into separate modules.
+
+### Installing Plugin Dependencies
+
+```shell
+# Scan src/plugins/ and install any required dependencies
+bun install-plugins
+
+# Auto-confirm dependency installation
+bun install-plugins --yes
+```
+
+This will:
+1. Discover all plugins in `src/plugins/*/index.ts`
+2. Check for exported `requiredPackages` in each plugin
+3. Add missing packages to your `package.json`
+4. Optionally run `bun install` to install them
+5. Generate a plugin manifest in `out/plugins-manifest.json`
+
+### Creating a Plugin
+
+Create a directory under `src/plugins/your-plugin-name/` with an `index.ts` file:
+
+```ts
+// src/plugins/my-tool/index.ts
+export const myTool = {
+  name: 'my_tool',
+  description: 'Does something useful',
+  inputSchema: {
+    type: 'object',
+    properties: { text: { type: 'string' } },
+    required: ['text']
+  },
+  handler: async (args, signal) => ({
+    content: [{ type: 'text', text: `Processed: ${args.text}` }]
+  })
+};
+
+// Optional: declare npm dependencies this plugin needs
+export const requiredPackages = {
+  'some-package': '^1.0.0'
+};
+
+export default myTool;
+```
+
+Then run `bun install-plugins` to register it and install dependencies.
 
 ## Logging & Config - For the paranoid
 

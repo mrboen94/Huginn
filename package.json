@@ -12,6 +12,7 @@
     "format": "bun x prettier . --check",
     "format:write": "bun x prettier . --write",
     "test": "bun x vitest --run",
+    "install-plugins": "bun scripts/install-plugins.ts",
     "test:watch": "bun x vitest",
     "coverage": "bun x vitest --coverage"
   },
