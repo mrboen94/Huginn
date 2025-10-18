@@ -1,0 +1,38 @@
+{
+  "name": "mcp",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun src/index.ts",
+    "dev": "bun --watch src/index",
+    "typecheck": "bun x tsc --noEmit",
+    "lint": "bun x eslint .",
+    "lint:fix": "bun x eslint . --fix",
+    "format": "bun x prettier . --check",
+    "format:write": "bun x prettier . --write",
+    "test": "bun x vitest --run",
+    "test:watch": "bun x vitest",
+    "coverage": "bun x vitest --coverage"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.38.0",
+    "@types/bun": "latest",
+    "@types/node": "^24.8.1",
+    "@typescript-eslint/eslint-plugin": "^8.46.1",
+    "@typescript-eslint/parser": "^8.46.1",
+    "eslint": "^9.38.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.2",
+    "vitest": "^3.2.4"
+  },
+  "peerDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.1",
+    "diff2html": "^3.4.52",
+    "playwright-core": "^1.56.1"
+  }
+}
