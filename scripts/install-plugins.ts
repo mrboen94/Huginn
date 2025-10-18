@@ -66,6 +66,55 @@ async function promptUser(question: string): Promise<boolean> {
     });
 }
 
+interface PluginChoice {
+    name: string;
+    tool: PluginTool;
+    requiredPackages?: Record<string, string>;
+    selected: boolean;
+}
+
+async function selectPluginsInteractively(plugins: PluginChoice[]): Promise<PluginChoice[]> {
+    if (plugins.length === 0) {
+        return plugins;
+    }
+    
+    console.log('\nFound plugins:');
+    plugins.forEach((plugin, index) => {
+        const packages = plugin.requiredPackages 
+            ? ` (requires: ${Object.keys(plugin.requiredPackages).join(', ')})`
+            : '';
+        console.log(`${index + 1}. ${plugin.name}${packages}`);
+        if (plugin.tool.description) {
+            console.log(`   ${plugin.tool.description}`);
+        }
+    });
+    
+    console.log('\nSelect plugins to install:');
+    console.log('Enter numbers separated by spaces (e.g., "1 3"), "all" for all plugins, or "none" to skip:');
+    
+    return new Promise<PluginChoice[]>((resolve) => {
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        rl.question('Selection: ', (answer) => {
+            rl.close();
+            
+            const selection = answer.trim().toLowerCase();
+            
+            if (selection === 'none' || selection === '') {
+                resolve(plugins.map(p => ({ ...p, selected: false })));
+            } else if (selection === 'all') {
+                resolve(plugins.map(p => ({ ...p, selected: true })));
+            } else {
+                const indices = selection.split(/\s+/)
+                    .map(s => parseInt(s, 10))
+                    .filter(n => n > 0 && n <= plugins.length)
+                    .map(n => n - 1);
+                
+                resolve(plugins.map((p, i) => ({ ...p, selected: indices.includes(i) })));
+            }
+        });
+    });
+}
+
 async function updatePackageJson(packages: Record<string, string>): Promise<boolean> {
     const pkgPath = join(process.cwd(), 'package.json');
     const pkg: PackageJson = JSON.parse(await readFile(pkgPath, 'utf8'));
@@ -94,6 +143,7 @@ async function updatePackageJson(packages: Record<string, string>): Promise<bool
 
 async function main(): Promise<void> {
     const args = process.argv.slice(2);
+    const autoInstallAll = args.includes('--all') || args.includes('-a');
     const autoYes = args.includes('--yes') || args.includes('-y');
     
     const pluginDirs = await findPluginDirs(process.cwd());
@@ -103,31 +153,66 @@ async function main(): Promise<void> {
         return;
     }
     
-    const manifest: Array<{ name: string; description: string }> = [];
-    const allPackages: Record<string, string> = {};
+    const availablePlugins: PluginChoice[] = [];
     
     for (const dir of pluginDirs) {
         const plugin = await loadPlugin(dir);
         
         if (plugin?.tool) {
-            manifest.push({
+            availablePlugins.push({
                 name: plugin.tool.name,
-                description: plugin.tool.description || ''
+                tool: plugin.tool,
+                requiredPackages: plugin.requiredPackages,
+                selected: autoInstallAll
             });
-            
-            if (plugin.requiredPackages) {
-                Object.assign(allPackages, plugin.requiredPackages);
-            }
         }
     }
     
-    console.log(`Loaded ${manifest.length} plugin(s).`);
+    if (availablePlugins.length === 0) {
+        console.log('No valid plugins found.');
+        return;
+    }
+    
+    let selectedPlugins: PluginChoice[];
+    
+    if (autoInstallAll) {
+        console.log(`Installing all ${availablePlugins.length} plugin(s) automatically.`);
+        selectedPlugins = availablePlugins.map(p => ({ ...p, selected: true }));
+    } else if (!process.stdin.isTTY) {
+        console.log('Non-interactive terminal detected. Installing all plugins.');
+        selectedPlugins = availablePlugins.map(p => ({ ...p, selected: true }));
+    } else {
+        selectedPlugins = await selectPluginsInteractively(availablePlugins);
+    }
+    
+    const pluginsToInstall = selectedPlugins.filter(p => p.selected);
+    
+    if (pluginsToInstall.length === 0) {
+        console.log('No plugins selected.');
+        return;
+    }
+    
+    const manifest = pluginsToInstall.map(plugin => ({
+        name: plugin.tool.name,
+        description: plugin.tool.description || ''
+    }));
+    
+    const allPackages: Record<string, string> = {};
+    for (const plugin of pluginsToInstall) {
+        if (plugin.requiredPackages) {
+            Object.assign(allPackages, plugin.requiredPackages);
+        }
+    }
+    
+    console.log(`\nSelected ${pluginsToInstall.length} plugin(s): ${pluginsToInstall.map(p => p.name).join(', ')}`);
     
     const outDir = join(process.cwd(), 'out');
     await mkdir(outDir, { recursive: true });
     await writeFile(join(outDir, 'plugins-manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
+    console.log('Plugin manifest updated.');
     
     if (Object.keys(allPackages).length === 0) {
+        console.log('No additional dependencies required.');
         return;
     }
     
