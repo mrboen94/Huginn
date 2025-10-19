@@ -2,6 +2,33 @@ import { html as diffToHtml } from 'diff2html';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { chromium } from 'playwright-core';
+import type { ToolArguments } from '../../tools/types.js';
+
+interface VisualizeDiffArgs {
+    diff: string;
+    format: 'html' | 'image';
+    outputType: 'side-by-side' | 'line-by-line';
+}
+
+function normalizeArgs(rawArgs: ToolArguments): VisualizeDiffArgs {
+    const diffValue = rawArgs.diff;
+    if (typeof diffValue !== 'string' || diffValue.trim() === '') {
+        throw new Error('Argument "diff" must be a non-empty string');
+    }
+
+    const formatValue = rawArgs.format;
+    const outputValue = rawArgs.outputType;
+
+    const format: 'html' | 'image' = formatValue === 'image' ? 'image' : 'html';
+    const outputType: 'side-by-side' | 'line-by-line' =
+        outputValue === 'line-by-line' ? 'line-by-line' : 'side-by-side';
+
+    return {
+        diff: diffValue,
+        format,
+        outputType,
+    };
+}
 
 export const visualizeDiffTool = {
     name: 'visualize_diff_image',
@@ -31,18 +58,10 @@ export const visualizeDiffTool = {
     },
 
     handler: async (
-        args: Record<string, unknown>,
+        args: ToolArguments,
         signal: AbortSignal,
     ) => {
-        const { diff, format = 'html', outputType = 'side-by-side' } = args as {
-            diff: string;
-            format?: 'html' | 'image';
-            outputType?: 'side-by-side' | 'line-by-line';
-        };
-
-        if (!diff || typeof diff !== 'string') {
-            throw new Error('Argument "diff" must be a non-empty string');
-        }
+        const { diff, format, outputType } = normalizeArgs(args);
 
         if (signal.aborted) {
             throw new Error('Aborted');

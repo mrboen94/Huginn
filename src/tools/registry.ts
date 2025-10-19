@@ -1,27 +1,35 @@
-import { readdir } from 'fs/promises';
+import { access, readdir } from 'fs/promises';
 import { join } from 'path';
 import { pathToFileURL } from 'url';
 
-export interface Tool {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  handler: (
-    args: Record<string, unknown>,
-    signal: AbortSignal,
-  ) => Promise<{
-    content: Array<{ type: string; text: string }>;
-    isError?: boolean;
-  }>;
-}
+import type { Tool, ToolListItem, ToolArguments } from './types.js';
+import { EMPTY_TOOL_ARGS } from './types.js';
+import { isPlainObject } from '../utils/typeGuards.js';
 
-export interface ToolListItem {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-}
 let loadedTools: Tool[] | null = null;
 const toolMeta = new Map<string, { dir: string }>();
+
+function isToolCandidate(value: unknown): value is Tool {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+
+  const { name, description, inputSchema, handler } = value;
+  if (typeof name !== 'string' || name.trim() === '') {
+    return false;
+  }
+  if (typeof description !== 'string') {
+    return false;
+  }
+  if (!isPlainObject(inputSchema)) {
+    return false;
+  }
+  if (typeof handler !== 'function') {
+    return false;
+  }
+
+  return true;
+}
 
 async function loadPlugins(): Promise<void> {
   if (loadedTools) return;
@@ -45,24 +53,26 @@ async function loadPlugins(): Promise<void> {
       let modPath: string | null = null;
       for (const candidate of candidates) {
         try {
-          await import('fs/promises').then(fs => fs.access(candidate));
+          await access(candidate);
           modPath = candidate;
           break;
-        } catch { /* file doesn't exist, try next candidate */ }
+        } catch {
+          // File does not exist, try next candidate
+        }
       }
 
       if (!modPath) throw new Error('No index.ts or index.js found');
 
       const url = pathToFileURL(modPath).href + `?ts=${Date.now()}`;
       const mod: unknown = await import(url);
-      const arr = (mod as { tools?: unknown }).tools as unknown;
-      if (!Array.isArray(arr)) {
+      const toolsExport = isPlainObject(mod) ? mod.tools : undefined;
+      if (!Array.isArray(toolsExport)) {
         throw new Error(`Plugin at ${dir} does not export a 'tools' array.`);
       }
-      for (const item of arr) {
-        if (item && typeof item.name === 'string' && typeof item.handler === 'function') {
-          tools.push(item as Tool);
-          toolMeta.set((item as Tool).name, { dir });
+      for (const item of toolsExport) {
+        if (isToolCandidate(item)) {
+          tools.push(item);
+          toolMeta.set(item.name, { dir });
         }
       }
     } catch (_err) {
@@ -83,12 +93,13 @@ async function loadPlugins(): Promise<void> {
         }
       }
     },
-    handler: async (args: Record<string, unknown>) => {
-      const plugin = typeof args?.plugin === 'string' ? args.plugin : undefined;
+    handler: async (args: ToolArguments = EMPTY_TOOL_ARGS) => {
+      const pluginValue = args.plugin;
+      const plugin = typeof pluginValue === 'string' ? pluginValue : undefined;
       if (!plugin) {
         loadedTools = null;
         await loadPlugins();
-        const toolsNow = (loadedTools as Tool[] | null) ?? [];
+        const toolsNow: Tool[] = loadedTools ?? [];
         const countAll = toolsNow.length;
         const names = toolsNow.map((t) => t.name).join(', ');
         return {
@@ -103,7 +114,9 @@ async function loadPlugins(): Promise<void> {
 
       const pluginsRoot = join(process.cwd(), 'src', 'plugins');
       const byTool = toolMeta.get(plugin)?.dir;
-      const candidateDirs = [byTool, join(pluginsRoot, plugin)].filter(Boolean) as string[];
+      const candidateDirs = [byTool, join(pluginsRoot, plugin)].filter(
+        (value): value is string => typeof value === 'string',
+      );
       let reloadedName: string | null = null;
       for (const dir of candidateDirs) {
         try {
@@ -112,17 +125,19 @@ async function loadPlugins(): Promise<void> {
           let modPath: string | null = null;
           for (const candidate of candidates) {
             try {
-              await import('fs/promises').then(fs => fs.access(candidate));
+              await access(candidate);
               modPath = candidate;
               break;
-            } catch { /* file doesn't exist, try next candidate */ }
+            } catch {
+              // File does not exist, try next candidate
+            }
           }
 
           if (!modPath) continue;
 
           const url = pathToFileURL(modPath).href + `?ts=${Date.now()}`;
           const mod: unknown = await import(url);
-          const arr = (mod as { tools?: unknown }).tools as unknown;
+          const arr = isPlainObject(mod) ? mod.tools : undefined;
           if (!Array.isArray(arr)) continue;
 
           // Remove any previously loaded tools from this directory
@@ -136,13 +151,13 @@ async function loadPlugins(): Promise<void> {
 
           // Add new tools
           for (const item of arr) {
-            if (item && typeof item.name === 'string' && typeof item.handler === 'function') {
-              loadedTools.push(item as Tool);
-              toolMeta.set((item as Tool).name, { dir });
+            if (isToolCandidate(item)) {
+              loadedTools.push(item);
+              toolMeta.set(item.name, { dir });
             }
           }
 
-          reloadedName = (arr[0] && typeof arr[0].name === 'string') ? arr[0].name : null;
+          reloadedName = arr[0] && typeof arr[0].name === 'string' ? arr[0].name : null;
           if (reloadedName) break;
         } catch (err) {
           void err;
@@ -150,7 +165,7 @@ async function loadPlugins(): Promise<void> {
       }
 
       if (reloadedName) {
-        const toolsNow = (loadedTools as Tool[] | null) ?? [];
+        const toolsNow: Tool[] = loadedTools ?? [];
         const countAll = toolsNow.length;
         const names = toolsNow.map((t) => t.name).join(', ');
         return {

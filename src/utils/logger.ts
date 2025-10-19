@@ -1,5 +1,6 @@
 import { appendFile, mkdir } from 'fs/promises';
 import { dirname } from 'path';
+import type { ToolArguments } from '../tools/types.js';
 
 export interface LogEntry {
   timestamp: string;
@@ -8,7 +9,7 @@ export interface LogEntry {
   durationMs: number;
   message: string;
   stack?: string;
-  args?: unknown;
+  args?: ToolArguments;
 }
 
 const DEFAULT_LOG_FILE = process.env.MCP_TOOL_LOG_FILE || 'logs/mcp-tools.log';

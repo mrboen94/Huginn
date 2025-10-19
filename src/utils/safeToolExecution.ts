@@ -1,3 +1,5 @@
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { ToolArguments } from '../tools/types.js';
 import { type LogEntry, appendJsonLine } from './logger.js';
 
 export class TimeoutError extends Error {
@@ -10,17 +12,15 @@ export class TimeoutError extends Error {
 export interface SafeToolOptions {
   timeoutMs?: number;
   logFile?: string;
-  logArgs?: unknown;
+  logArgs?: ToolArguments;
   logger?: (entry: LogEntry, file?: string) => void;
 }
 
 export async function safeToolExecution(
   toolName: string,
-  handler: (
-    signal: AbortSignal,
-  ) => Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>,
+  handler: (signal: AbortSignal) => Promise<CallToolResult>,
   options?: SafeToolOptions,
-): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> {
+): Promise<CallToolResult> {
   const startTime = Date.now();
   const timeoutMs =
     options?.timeoutMs ??

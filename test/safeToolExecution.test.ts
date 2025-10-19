@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { CallToolResult, TextContent } from '@modelcontextprotocol/sdk/types.js';
 import {
   safeToolExecution,
   TimeoutError,
@@ -12,8 +13,9 @@ describe('safeToolExecution', () => {
   });
 
   it('should return handler result on success without logging', async () => {
-    const handler = async () => ({
-      content: [{ type: 'text', text: 'Success!' }],
+    const handler = async (): Promise<CallToolResult> => ({
+      content: [{ type: 'text', text: 'Success!' } satisfies TextContent],
+      isError: false,
     });
 
     const result = await safeToolExecution('test-tool', handler, {
@@ -22,18 +24,22 @@ describe('safeToolExecution', () => {
 
     expect(result).toEqual({
       content: [{ type: 'text', text: 'Success!' }],
+      isError: false,
     });
-    expect(result.isError).toBeFalsy();
+    expect(result.isError).toBe(false);
     expect(mockLogger).not.toHaveBeenCalled();
   });
 
   it('should handle timeout with proper error response and async logging', async () => {
     const handler = async (
       signal: AbortSignal,
-    ): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> => {
+    ): Promise<CallToolResult> => {
       return new Promise((resolve) => {
         const timeout = setTimeout(() => {
-          resolve({ content: [{ type: 'text', text: 'Never reached' }] });
+          resolve({
+            content: [{ type: 'text', text: 'Never reached' } satisfies TextContent],
+            isError: false,
+          });
         }, 100);
 
         signal.addEventListener('abort', () => {
@@ -73,7 +79,7 @@ describe('safeToolExecution', () => {
   });
 
   it('should handle handler errors with proper error response and async logging', async () => {
-    const handler = async (): Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }> => {
+    const handler = async (): Promise<CallToolResult> => {
       throw new Error('Test error message');
     };
 
@@ -111,7 +117,7 @@ describe('safeToolExecution', () => {
   });
 
   it('should handle non-Error exceptions with normalized message', async () => {
-    const handler = async () => {
+    const handler = async (): Promise<CallToolResult> => {
       throw 'String error';
     };
 
@@ -143,9 +149,12 @@ describe('safeToolExecution', () => {
     process.env.MCP_TOOL_TIMEOUT_MS = '50';
 
     try {
-      const handler = async () => {
+      const handler = async (): Promise<CallToolResult> => {
         await new Promise((resolve) => setTimeout(resolve, 100));
-        return { content: [{ type: 'text', text: 'Never reached' }] };
+        return {
+          content: [{ type: 'text', text: 'Never reached' } satisfies TextContent],
+          isError: false,
+        };
       };
 
       const result = await safeToolExecution('test-tool', handler, {

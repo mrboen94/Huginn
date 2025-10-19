@@ -1,11 +1,14 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import {
   CallToolRequestSchema,
+  CallToolResult,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { toolRegistry } from './tools/registry.js';
+import type { ToolArguments } from './tools/types.js';
 import { safeToolExecution } from './utils/safeToolExecution.js';
+import { isPlainObject } from './utils/typeGuards.js';
 
 class HuginnMCPServer {
   private server: Server;
@@ -22,6 +25,8 @@ class HuginnMCPServer {
         },
       },
     );
+
+    this.initialize();
   }
 
   private async initialize() {
@@ -44,7 +49,7 @@ class HuginnMCPServer {
       if (!tool) {
         const availableNames = toolRegistry.listTools().map((t) => t.name).join(', ');
         console.error(`[Huginn] Unknown tool requested: ${request.params.name}`);
-        return {
+        const result: CallToolResult = {
           isError: true,
           content: [
             {
@@ -52,10 +57,13 @@ class HuginnMCPServer {
               text: `Unknown tool: ${request.params.name}. Available tools: ${availableNames}`,
             },
           ],
-        } as unknown as Record<string, unknown>;
+        };
+        return result;
       }
 
-      const args = request.params.arguments ?? {};
+      const args: ToolArguments = isPlainObject(request.params.arguments)
+        ? request.params.arguments
+        : {};
       return await safeToolExecution(
         tool.name,
         (signal) => tool.handler(args, signal),
@@ -65,8 +73,6 @@ class HuginnMCPServer {
   }
 
   async run(): Promise<void> {
-    await this.initialize();
-
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error('[Huginn] MCP server running (stdio).');

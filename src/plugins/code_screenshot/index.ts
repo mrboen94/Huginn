@@ -2,13 +2,14 @@ import { readFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { chromium } from 'playwright-core';
 import { createRequire } from 'module';
+import type { ToolArguments } from '../../tools/types.js';
 
 interface CodeScreenshotArgs {
     code: string;
-    language?: string;
-    transparent?: boolean;
+    language: string;
+    transparent: boolean;
     highlight?: string;
-    scale?: number;
+    scale: number;
     titleOverride?: string;
 }
 
@@ -42,6 +43,34 @@ function parseHighlightRanges(ranges: string | undefined, maxLines = 10000): Set
     }
 
     return highlighted;
+}
+
+function normalizeArgs(rawArgs: ToolArguments): CodeScreenshotArgs {
+    const codeValue = rawArgs.code;
+    if (typeof codeValue !== 'string' || codeValue.trim() === '') {
+        throw new Error('Argument "code" must be a non-empty string');
+    }
+
+    const languageValue = rawArgs.language;
+    const transparentValue = rawArgs.transparent;
+    const highlightValue = rawArgs.highlight;
+    const scaleValue = rawArgs.scale;
+    const titleValue = rawArgs.titleOverride;
+
+    const language = typeof languageValue === 'string' && languageValue.trim() ? languageValue : 'plaintext';
+    const transparent = typeof transparentValue === 'boolean' ? transparentValue : false;
+    const highlight = typeof highlightValue === 'string' ? highlightValue : undefined;
+    const scale = typeof scaleValue === 'number' && Number.isFinite(scaleValue) && scaleValue > 0 ? scaleValue : 2;
+    const titleOverride = typeof titleValue === 'string' && titleValue.trim() ? titleValue : undefined;
+
+    return {
+        code: codeValue,
+        language,
+        transparent,
+        highlight,
+        scale,
+        titleOverride,
+    };
 }
 
 // Sanitize HTML strings to prevent injection
@@ -359,21 +388,18 @@ export const codeScreenshotTool = {
     },
 
     handler: async (
-        args: Record<string, unknown>,
+        args: ToolArguments,
         signal: AbortSignal
     ) => {
+        const normalized = normalizeArgs(args);
         const {
             code,
-            language = 'plaintext',
-            transparent = false,
+            language,
+            transparent,
             highlight,
-            scale = 2,
+            scale,
             titleOverride
-        } = args as unknown as CodeScreenshotArgs;
-
-        if (!code || typeof code !== 'string') {
-            throw new Error('Argument "code" must be a non-empty string');
-        }
+        } = normalized;
 
         if (signal.aborted) {
             throw new Error('Aborted');
@@ -448,8 +474,23 @@ export const codeScreenshotTool = {
             }
 
             await page.evaluate(() => {
-                const d = document as unknown as { fonts?: { ready: Promise<void> } };
-                return d.fonts ? d.fonts.ready : Promise.resolve();
+                const globalRecord = globalThis as Record<string, unknown>;
+                const documentValue = globalRecord.document;
+                if (typeof documentValue === 'object' && documentValue !== null) {
+                    const fontsValue = (documentValue as Record<string, unknown>).fonts;
+                    if (typeof fontsValue === 'object' && fontsValue !== null) {
+                        const readyValue = (fontsValue as Record<string, unknown>).ready;
+                        if (
+                            readyValue &&
+                            typeof readyValue === 'object' &&
+                            'then' in readyValue &&
+                            typeof (readyValue as Promise<unknown>).then === 'function'
+                        ) {
+                            return readyValue as Promise<unknown>;
+                        }
+                    }
+                }
+                return Promise.resolve();
             });
 
             const captureElement = await page.$('#capture');
