@@ -22,8 +22,6 @@ class HuginnMCPServer {
         },
       },
     );
-
-    this.initialize();
   }
 
   private async initialize() {
@@ -67,6 +65,8 @@ class HuginnMCPServer {
   }
 
   async run(): Promise<void> {
+    await this.initialize();
+
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error('[Huginn] MCP server running (stdio).');
