@@ -7,13 +7,13 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { toolRegistry } from './tools/registry.js';
 import { safeToolExecution } from './utils/safeToolExecution.js';
 
-class MyMCPServer {
+class HuginnMCPServer {
   private server: Server;
 
   constructor() {
     this.server = new Server(
       {
-        name: 'my-mcp-server',
+        name: 'huginn',
         version: '1.0.0',
       },
       {
@@ -29,6 +29,10 @@ class MyMCPServer {
   private async initialize() {
     await toolRegistry.init();
     this.setupHandlers();
+
+    const tools = toolRegistry.listTools();
+    const names = tools.map((t) => t.name).join(', ');
+    console.error(`[Huginn] Loaded ${tools.length} tool(s): ${names || '—'}`);
   }
 
   private setupHandlers(): void {
@@ -40,9 +44,8 @@ class MyMCPServer {
       const tool = toolRegistry.getTool(request.params.name);
 
       if (!tool) {
-        const availableTools = toolRegistry.listTools();
-        const availableNames = availableTools.map((t) => t.name).join(', ');
-        console.error(`Unknown tool requested: ${request.params.name}`);
+        const availableNames = toolRegistry.listTools().map((t) => t.name).join(', ');
+        console.error(`[Huginn] Unknown tool requested: ${request.params.name}`);
         return {
           isError: true,
           content: [
@@ -51,7 +54,6 @@ class MyMCPServer {
               text: `Unknown tool: ${request.params.name}. Available tools: ${availableNames}`,
             },
           ],
-          tools: availableTools,
         } as unknown as Record<string, unknown>;
       }
 
@@ -67,9 +69,11 @@ class MyMCPServer {
   async run(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('MCP Server [Huginn] running with Bun!');
+    console.error('[Huginn] MCP server running (stdio).');
   }
 }
 
-const server = new MyMCPServer();
-server.run().catch(console.error);
+const server = new HuginnMCPServer();
+server.run().catch((err) => {
+  console.error('[Huginn] Fatal error:', err);
+});

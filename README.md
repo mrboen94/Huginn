@@ -142,26 +142,41 @@ Huginn supports a plugin architecture for organizing tools into separate modules
 ### Installing Plugin Dependencies
 
 ```shell
-# Scan src/plugins/ and install any required dependencies
+# Interactive plugin selection (default)
 bun install-plugins
+
+# Install all plugins automatically
+bun install-plugins --all
 
 # Auto-confirm dependency installation
 bun install-plugins --yes
+
+# Combine options
+bun install-plugins --all --yes
 ```
 
+**Interactive Mode (Default):**
+- Shows all available plugins with descriptions
+- Lets you select which plugins to install
+- Enter numbers (e.g., "1 3"), "all", or "none"
+
+**Command Options:**
+- `--all` or `-a`: Install all plugins without prompting
+- `--yes` or `-y`: Auto-confirm `bun install` step
+
 This will:
-1. Discover all plugins in `src/plugins/*/index.ts`
-2. Check for exported `requiredPackages` in each plugin
-3. Add missing packages to your `package.json`
-4. Optionally run `bun install` to install them
-5. Generate a plugin manifest in `out/plugins-manifest.json`
+1. Discover plugin folders at `src/plugins/*/index.ts`
+2. Let you choose which plugin folders to install (interactive mode)
+3. Add missing packages declared by that folder’s `requiredPackages` to your `package.json`
+4. Optionally run `bun install` to actually install them
+5. Generate a manifest in `out/plugins-manifest.json` with folder names and tool lists
 
 ### Creating a Plugin
 
 Create a directory under `src/plugins/your-plugin-name/` with an `index.ts` file:
 
 ```ts
-// src/plugins/my-tool/index.ts
+// src/plugins/my-plugin/index.ts
 export const myTool = {
   name: 'my_tool',
   description: 'Does something useful',
@@ -175,15 +190,77 @@ export const myTool = {
   })
 };
 
-// Optional: declare npm dependencies this plugin needs
+export const anotherTool = {
+  name: 'another_tool',
+  description: 'Does something else useful',
+  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  handler: async (_args, _signal) => ({
+    content: [{ type: 'text', text: 'All good.' }]
+  })
+};
+
+// The only thing the loader cares about
+export const tools = [myTool, anotherTool];
+
+// Optional: per-plugin dependencies (installed via `bun install-plugins`)
 export const requiredPackages = {
   'some-package': '^1.0.0'
 };
-
-export default myTool;
 ```
 
-Then run `bun install-plugins` to register it and install dependencies.
+Then run `bun install-plugins` to register the whole folder and install its dependencies.
+
+### Generated Tools (quality-of-life, not sorcery)
+- `create_mcp_tool`: scaffold a new plugin folder with a properly tagged tool name (`generated_<base>`), path-safe writes, optional dependency add, optional install (you confirm), and auto-refresh.
+- `remove_generated_tool`: deletes only tools that were generated (header + `generated_` prefix) and refreshes the registry.
+- `rename_generated_tool`: renames a generated tool (folder + tool name), with safety checks, then refresh.
+- `edit_generated_tool`: updates description, input_schema, handler_code, and optional requiredPackages; unsafe code is gated behind a flag with explicit warnings.
+
+Rules are simple: you bring the logic, Huginn brings the boundaries. Stay inside `src/plugins/`, export `tools = [...]`, and we’ll do the rest.
+
+## Included Plugins
+
+### code_screenshot
+Render a styled PNG from a code string with syntax highlighting, line numbers, and optional line highlighting.
+
+Args:
+- code (string, required)
+- language (string, default: "plaintext")
+- transparent (boolean, default: false)
+- highlight (string, line ranges like "3,5-7,10")
+- scale (number, default: 2)
+- titleOverride (string)
+
+Notes:
+- Fixed line height (18px) and preserved indentation; empty lines keep height.
+- Highlight uses an inset left bar (no layout shift) and avoids first-glyph overlap.
+- Very long lines are supported; the viewport auto-expands to capture full width.
+- Transparent mode: rounded corners, smaller title, margin + shadow for separation.
+- Iosevka is embedded when available; falls back to system monospace.
+
+### visualize_diff_image
+Generate HTML or PNG from a unified diff.
+
+Args:
+- diff (string, required)
+- format ("html" | "image", default: "html")
+- outputType ("side-by-side" | "line-by-line", default: "side-by-side")
+
+## Built-in Management Tools
+
+### refresh_plugins
+Reload plugins without restarting the server.
+
+Schema:
+- plugin (string, optional): tool name or plugin directory to refresh only that plugin.
+
+Examples:
+```json
+{ "name": "refresh_plugins", "arguments": {} }
+```
+```json
+{ "name": "refresh_plugins", "arguments": { "plugin": "code_screenshot" } }
+```
 
 ## Logging & Config - For the paranoid
 

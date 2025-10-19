@@ -124,6 +124,7 @@ ${htmlBody}
     },
 };
 
+export const tools = [visualizeDiffTool];
 export default visualizeDiffTool;
 
 export const requiredPackages = {

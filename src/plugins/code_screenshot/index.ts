@@ -447,7 +447,10 @@ export const codeScreenshotTool = {
                 throw new Error('Aborted');
             }
 
-            await page.evaluate(() => (document as any).fonts ? (document as any).fonts.ready : Promise.resolve());
+            await page.evaluate(() => {
+                const d = document as unknown as { fonts?: { ready: Promise<void> } };
+                return d.fonts ? d.fonts.ready : Promise.resolve();
+            });
 
             const captureElement = await page.$('#capture');
             if (!captureElement) {
@@ -484,6 +487,7 @@ export const codeScreenshotTool = {
     }
 };
 
+export const tools = [codeScreenshotTool];
 export default codeScreenshotTool;
 
 export const requiredPackages = {

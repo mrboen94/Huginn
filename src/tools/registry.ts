@@ -40,13 +40,30 @@ async function loadPlugins(): Promise<void> {
 
   for (const dir of dirs) {
     try {
-      const modPath = join(dir, 'index.js');
+      // Try loading .ts first, then .js as fallback
+      const candidates = [join(dir, 'index.ts'), join(dir, 'index.js')];
+      let modPath: string | null = null;
+      for (const candidate of candidates) {
+        try {
+          await import('fs/promises').then(fs => fs.access(candidate));
+          modPath = candidate;
+          break;
+        } catch { /* file doesn't exist, try next candidate */ }
+      }
+
+      if (!modPath) throw new Error('No index.ts or index.js found');
+
       const url = pathToFileURL(modPath).href + `?ts=${Date.now()}`;
-      const mod = await import(url);
-      const exported = mod.visualizeDiffTool || mod.default || mod.tool || null;
-      if (exported && typeof exported.name === 'string') {
-        tools.push(exported as Tool);
-        toolMeta.set((exported as Tool).name, { dir });
+      const mod: unknown = await import(url);
+      const arr = (mod as { tools?: unknown }).tools as unknown;
+      if (!Array.isArray(arr)) {
+        throw new Error(`Plugin at ${dir} does not export a 'tools' array.`);
+      }
+      for (const item of arr) {
+        if (item && typeof item.name === 'string' && typeof item.handler === 'function') {
+          tools.push(item as Tool);
+          toolMeta.set((item as Tool).name, { dir });
+        }
       }
     } catch (_err) {
       console.error(`Failed to load plugin at ${dir}:`, _err);
@@ -71,8 +88,17 @@ async function loadPlugins(): Promise<void> {
       if (!plugin) {
         loadedTools = null;
         await loadPlugins();
-        const countAll = loadedTools?.length ?? 0;
-        return { content: [{ type: 'text', text: `Plugins reloaded. Total tools: ${countAll}` }] } as any;
+        const toolsNow = (loadedTools as Tool[] | null) ?? [];
+        const countAll = toolsNow.length;
+        const names = toolsNow.map((t) => t.name).join(', ');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Plugins reloaded. Total tools: ${countAll}. Tools: ${names}`,
+            },
+          ],
+        };
       }
 
       const pluginsRoot = join(process.cwd(), 'src', 'plugins');
@@ -81,27 +107,62 @@ async function loadPlugins(): Promise<void> {
       let reloadedName: string | null = null;
       for (const dir of candidateDirs) {
         try {
-          const modPath = join(dir, 'index.js');
-          const url = pathToFileURL(modPath).href + `?ts=${Date.now()}`;
-          const mod = await import(url);
-          const exported = mod.visualizeDiffTool || mod.default || mod.tool || null;
-          if (exported && typeof exported.name === 'string') {
-            reloadedName = (exported as Tool).name;
-            if (!loadedTools) loadedTools = [];
-            const idx = loadedTools.findIndex((t) => t.name === reloadedName);
-            if (idx >= 0) loadedTools[idx] = exported as Tool; else loadedTools.push(exported as Tool);
-            toolMeta.set(reloadedName, { dir });
-            break;
+          // Try loading .ts first, then .js as fallback
+          const candidates = [join(dir, 'index.ts'), join(dir, 'index.js')];
+          let modPath: string | null = null;
+          for (const candidate of candidates) {
+            try {
+              await import('fs/promises').then(fs => fs.access(candidate));
+              modPath = candidate;
+              break;
+            } catch { /* file doesn't exist, try next candidate */ }
           }
+
+          if (!modPath) continue;
+
+          const url = pathToFileURL(modPath).href + `?ts=${Date.now()}`;
+          const mod: unknown = await import(url);
+          const arr = (mod as { tools?: unknown }).tools as unknown;
+          if (!Array.isArray(arr)) continue;
+
+          // Remove any previously loaded tools from this directory
+          if (!loadedTools) loadedTools = [];
+          const toRemove = loadedTools.filter(t => toolMeta.get(t.name)?.dir === dir).map(t => t.name);
+          for (const name of toRemove) {
+            const idx = loadedTools.findIndex(t => t.name === name);
+            if (idx >= 0) loadedTools.splice(idx, 1);
+            toolMeta.delete(name);
+          }
+
+          // Add new tools
+          for (const item of arr) {
+            if (item && typeof item.name === 'string' && typeof item.handler === 'function') {
+              loadedTools.push(item as Tool);
+              toolMeta.set((item as Tool).name, { dir });
+            }
+          }
+
+          reloadedName = (arr[0] && typeof arr[0].name === 'string') ? arr[0].name : null;
+          if (reloadedName) break;
         } catch (err) {
           void err;
         }
       }
 
       if (reloadedName) {
-        return { content: [{ type: 'text', text: `Plugin reloaded: ${reloadedName}` }] } as any;
+        const toolsNow = (loadedTools as Tool[] | null) ?? [];
+        const countAll = toolsNow.length;
+        const names = toolsNow.map((t) => t.name).join(', ');
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Plugin reloaded: ${reloadedName}. Total tools: ${countAll}. Tools: ${names}`,
+            },
+          ],
+        };
       }
-      return { content: [{ type: 'text', text: `Plugin not found: ${plugin}` }], isError: true } as any;
+      return { content: [{ type: 'text', text: `Plugin not found: ${plugin}` }], isError: true };
     },
   };
 

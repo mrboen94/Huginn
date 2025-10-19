@@ -28,13 +28,12 @@ async function findPluginDirs(root: string): Promise<string[]> {
     }
 }
 
-async function loadPlugin(dir: string): Promise<{ tool?: PluginTool; requiredPackages?: Record<string, string> } | null> {
+async function loadPlugin(dir: string): Promise<{ tools?: PluginTool[]; requiredPackages?: Record<string, string> } | null> {
     try {
         const mod = await import(join(dir, 'index.ts'));
+        const tools = Array.isArray(mod.tools) ? (mod.tools as PluginTool[]) : undefined;
         return {
-            tool: mod.default || mod.tool || Object.values(mod).find(v => 
-                v && typeof v === 'object' && 'name' in v && 'handler' in v
-            ),
+            tools,
             requiredPackages: mod.requiredPackages
         };
     } catch {
@@ -67,8 +66,8 @@ async function promptUser(question: string): Promise<boolean> {
 }
 
 interface PluginChoice {
-    name: string;
-    tool: PluginTool;
+    dirName: string;
+    tools: PluginTool[];
     requiredPackages?: Record<string, string>;
     selected: boolean;
 }
@@ -83,10 +82,9 @@ async function selectPluginsInteractively(plugins: PluginChoice[]): Promise<Plug
         const packages = plugin.requiredPackages 
             ? ` (requires: ${Object.keys(plugin.requiredPackages).join(', ')})`
             : '';
-        console.log(`${index + 1}. ${plugin.name}${packages}`);
-        if (plugin.tool.description) {
-            console.log(`   ${plugin.tool.description}`);
-        }
+        const toolNames = plugin.tools.map(t => t.name).join(', ');
+        console.log(`${index + 1}. ${plugin.dirName}${packages}`);
+        console.log(`   tools: ${toolNames}`);
     });
     
     console.log('\nSelect plugins to install:');
@@ -158,10 +156,10 @@ async function main(): Promise<void> {
     for (const dir of pluginDirs) {
         const plugin = await loadPlugin(dir);
         
-        if (plugin?.tool) {
+        if (plugin?.tools && plugin.tools.length > 0) {
             availablePlugins.push({
-                name: plugin.tool.name,
-                tool: plugin.tool,
+                dirName: dir.split('/').pop() || dir,
+                tools: plugin.tools,
                 requiredPackages: plugin.requiredPackages,
                 selected: autoInstallAll
             });
@@ -193,8 +191,8 @@ async function main(): Promise<void> {
     }
     
     const manifest = pluginsToInstall.map(plugin => ({
-        name: plugin.tool.name,
-        description: plugin.tool.description || ''
+        dir: plugin.dirName,
+        tools: plugin.tools.map(t => ({ name: t.name, description: t.description || '' }))
     }));
     
     const allPackages: Record<string, string> = {};
@@ -204,7 +202,7 @@ async function main(): Promise<void> {
         }
     }
     
-    console.log(`\nSelected ${pluginsToInstall.length} plugin(s): ${pluginsToInstall.map(p => p.name).join(', ')}`);
+    console.log(`\nSelected ${pluginsToInstall.length} plugin(s): ${pluginsToInstall.map(p => p.dirName).join(', ')}`);
     
     const outDir = join(process.cwd(), 'out');
     await mkdir(outDir, { recursive: true });
