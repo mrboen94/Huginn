@@ -1,103 +1,133 @@
 import { readFile, mkdir } from 'fs/promises';
 import { join } from 'path';
-import { chromium } from 'playwright-core';
+import { chromium } from 'playwright';
 import { createRequire } from 'module';
 import type { ToolArguments } from '../../tools/types.js';
 
 interface CodeScreenshotArgs {
-    code: string;
-    language: string;
-    transparent: boolean;
-    highlight?: string;
-    scale: number;
-    titleOverride?: string;
+  code: string;
+  language: string;
+  transparent: boolean;
+  highlight?: string;
+  scale: number;
+  titleOverride?: string;
 }
 
-function parseHighlightRanges(ranges: string | undefined, maxLines = 10000): Set<number> {
-    const highlighted = new Set<number>();
+function parseHighlightRanges(
+  ranges: string | undefined,
+  maxLines = 10000,
+): Set<number> {
+  const highlighted = new Set<number>();
 
-    if (!ranges?.trim()) return highlighted;
+  if (!ranges?.trim()) return highlighted;
 
-    const tokens = ranges.split(',').map(s => s.trim()).filter(Boolean);
+  const tokens = ranges
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
-    for (const token of tokens) {
-        if (token.includes('-')) {
-            const parts = token.split('-');
-            if (parts.length >= 2 && parts[0] && parts[1]) {
-                const start = parseInt(parts[0].trim(), 10);
-                const end = parseInt(parts[1].trim(), 10);
-                if (isFinite(start) && isFinite(end) && start > 0 && end > 0) {
-                    const min = Math.min(start, end);
-                    const max = Math.min(Math.max(start, end), maxLines);
-                    for (let i = min; i <= max; i++) {
-                        highlighted.add(i);
-                    }
-                }
-            }
-        } else {
-            const line = parseInt(token, 10);
-            if (isFinite(line) && line > 0) {
-                highlighted.add(line);
-            }
+  for (const token of tokens) {
+    if (token.includes('-')) {
+      const parts = token.split('-');
+      if (parts.length >= 2 && parts[0] && parts[1]) {
+        const start = parseInt(parts[0].trim(), 10);
+        const end = parseInt(parts[1].trim(), 10);
+        if (isFinite(start) && isFinite(end) && start > 0 && end > 0) {
+          const min = Math.min(start, end);
+          const max = Math.min(Math.max(start, end), maxLines);
+          for (let i = min; i <= max; i++) {
+            highlighted.add(i);
+          }
         }
+      }
+    } else {
+      const line = parseInt(token, 10);
+      if (isFinite(line) && line > 0) {
+        highlighted.add(line);
+      }
     }
+  }
 
-    return highlighted;
+  return highlighted;
 }
 
 function normalizeArgs(rawArgs: ToolArguments): CodeScreenshotArgs {
-    const codeValue = rawArgs.code;
-    if (typeof codeValue !== 'string' || codeValue.trim() === '') {
-        throw new Error('Argument "code" must be a non-empty string');
-    }
+  const codeValue = rawArgs.code;
+  if (typeof codeValue !== 'string' || codeValue.trim() === '') {
+    throw new Error('Argument "code" must be a non-empty string');
+  }
 
-    const languageValue = rawArgs.language;
-    const transparentValue = rawArgs.transparent;
-    const highlightValue = rawArgs.highlight;
-    const scaleValue = rawArgs.scale;
-    const titleValue = rawArgs.titleOverride;
+  const languageValue = rawArgs.language;
+  const transparentValue = rawArgs.transparent;
+  const highlightValue = rawArgs.highlight;
+  const scaleValue = rawArgs.scale;
+  const titleValue = rawArgs.titleOverride;
 
-    const language = typeof languageValue === 'string' && languageValue.trim() ? languageValue : 'plaintext';
-    const transparent = typeof transparentValue === 'boolean' ? transparentValue : false;
-    const highlight = typeof highlightValue === 'string' ? highlightValue : undefined;
-    const scale = typeof scaleValue === 'number' && Number.isFinite(scaleValue) && scaleValue > 0 ? scaleValue : 2;
-    const titleOverride = typeof titleValue === 'string' && titleValue.trim() ? titleValue : undefined;
+  const language =
+    typeof languageValue === 'string' && languageValue.trim()
+      ? languageValue
+      : 'plaintext';
+  const transparent =
+    typeof transparentValue === 'boolean' ? transparentValue : false;
+  const highlight =
+    typeof highlightValue === 'string' ? highlightValue : undefined;
+  const scale =
+    typeof scaleValue === 'number' &&
+    Number.isFinite(scaleValue) &&
+    scaleValue > 0
+      ? scaleValue
+      : 2;
+  const titleOverride =
+    typeof titleValue === 'string' && titleValue.trim()
+      ? titleValue
+      : undefined;
 
-    return {
-        code: codeValue,
-        language,
-        transparent,
-        highlight,
-        scale,
-        titleOverride,
-    };
+  return {
+    code: codeValue,
+    language,
+    transparent,
+    highlight,
+    scale,
+    titleOverride,
+  };
 }
 
 // Sanitize HTML strings to prevent injection
 function escapeHtml(text: string): string {
-    return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#x27;');
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
 }
 
-async function getIosevkaFontCSS(): Promise<{ css: string; fallback: boolean }> {
+async function getIosevkaFontCSS(): Promise<{
+  css: string;
+  fallback: boolean;
+}> {
+  try {
+    const require = createRequire(import.meta.url);
+    let fontPath: string;
+
     try {
-        const require = createRequire(import.meta.url);
-        let fontPath: string;
+      fontPath =
+        require.resolve('@fontsource/iosevka/files/iosevka-latin-400-normal.woff2');
+    } catch {
+      fontPath = join(
+        process.cwd(),
+        'node_modules',
+        '@fontsource',
+        'iosevka',
+        'files',
+        'iosevka-latin-400-normal.woff2',
+      );
+    }
 
-        try {
-            fontPath = require.resolve('@fontsource/iosevka/files/iosevka-latin-400-normal.woff2');
-        } catch {
-            fontPath = join(process.cwd(), 'node_modules', '@fontsource', 'iosevka', 'files', 'iosevka-latin-400-normal.woff2');
-        }
+    const fontBuffer = await readFile(fontPath);
+    const base64Font = fontBuffer.toString('base64');
 
-        const fontBuffer = await readFile(fontPath);
-        const base64Font = fontBuffer.toString('base64');
-
-        const css = `
+    const css = `
 @font-face {
     font-family: 'Iosevka';
     font-weight: 400;
@@ -106,59 +136,62 @@ async function getIosevkaFontCSS(): Promise<{ css: string; fallback: boolean }> 
     src: url(data:font/woff2;base64,${base64Font}) format('woff2');
 }`;
 
-        return { css, fallback: false };
-    } catch {
-        return {
-            css: '',
-            fallback: true
-        };
-    }
+    return { css, fallback: false };
+  } catch {
+    return {
+      css: '',
+      fallback: true,
+    };
+  }
 }
 
 async function generateHTML(
-    code: string,
-    language: string,
-    highlighted: Set<number>,
-    transparent: boolean,
-    title: string
+  code: string,
+  language: string,
+  highlighted: Set<number>,
+  transparent: boolean,
+  title: string,
 ): Promise<{ html: string; usedFallback: boolean }> {
-    const { codeToHtml } = await import('shiki');
+  const { codeToHtml } = await import('shiki');
 
-    let shikiHtml: string;
+  let shikiHtml: string;
 
-    try {
-        shikiHtml = await codeToHtml(code, {
-            lang: language,
-            theme: 'dracula'
-        });
-    } catch {
-        shikiHtml = await codeToHtml(code, {
-            lang: 'plaintext',
-            theme: 'dracula'
-        });
-    }
+  try {
+    shikiHtml = await codeToHtml(code, {
+      lang: language,
+      theme: 'dracula',
+    });
+  } catch {
+    shikiHtml = await codeToHtml(code, {
+      lang: 'plaintext',
+      theme: 'dracula',
+    });
+  }
 
-    if (highlighted.size > 0) {
-        const lines = shikiHtml.split('\n');
-        const processedLines = lines.map((line, index) => {
-            const lineNumber = index + 1;
-            if (highlighted.has(lineNumber) && line.includes('<span class="line">')) {
-                return line.replace('<span class="line">', '<span class="line highlighted">');
-            }
-            return line;
-        });
-        shikiHtml = processedLines.join('\n');
-    }
+  if (highlighted.size > 0) {
+    const lines = shikiHtml.split('\n');
+    const processedLines = lines.map((line, index) => {
+      const lineNumber = index + 1;
+      if (highlighted.has(lineNumber) && line.includes('<span class="line">')) {
+        return line.replace(
+          '<span class="line">',
+          '<span class="line highlighted">',
+        );
+      }
+      return line;
+    });
+    shikiHtml = processedLines.join('\n');
+  }
 
-    const { css: fontCSS, fallback: fontFallback } = await getIosevkaFontCSS();
+  const { css: fontCSS, fallback: fontFallback } = await getIosevkaFontCSS();
 
-    const fontFamily = fontFallback ?
-        `'Monaco', 'Menlo', 'Ubuntu Mono', monospace` :
-        `'Iosevka', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace`;
+  const fontFamily = fontFallback
+    ? `'Monaco', 'Menlo', 'Ubuntu Mono', monospace`
+    : `'Iosevka', 'Monaco', 'Menlo', 'Ubuntu Mono', monospace`;
 
-    const safetitle = escapeHtml(title);
+  const safetitle = escapeHtml(title);
 
-    const html = `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -332,206 +365,201 @@ async function generateHTML(
 </body>
 </html>`;
 
-    return { html, usedFallback: fontFallback };
+  return { html, usedFallback: fontFallback };
 }
 
 // Generate timestamp for filename
 function generateTimestamp(): string {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    const ms = String(now.getMilliseconds()).padStart(3, '0');
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const ms = String(now.getMilliseconds()).padStart(3, '0');
 
-    return `${year}${month}${day}_${hours}${minutes}${seconds}${ms}`;
+  return `${year}${month}${day}_${hours}${minutes}${seconds}${ms}`;
 }
 
 export const codeScreenshotTool = {
-    name: 'code_screenshot',
-    description: 'Render a styled PNG screenshot from a code string (Dracula theme, Iosevka font, macOS style, line numbers, highlight ranges)',
-    inputSchema: {
-        type: 'object',
-        properties: {
-            code: {
-                type: 'string',
-                description: 'Code string to render'
-            },
-            language: {
-                type: 'string',
-                description: 'Programming language for syntax highlighting',
-                default: 'plaintext'
-            },
-            transparent: {
-                type: 'boolean',
-                description: 'Use transparent background',
-                default: false
-            },
-            highlight: {
-                type: 'string',
-                description: 'Highlight line ranges (e.g., "3,5-7,10")'
-            },
-            scale: {
-                type: 'number',
-                description: 'Device scale factor for higher DPI',
-                default: 2
-            },
-            titleOverride: {
-                type: 'string',
-                description: 'Custom window title (defaults to language name)'
-            }
-        },
-        required: ['code'],
-        additionalProperties: false
+  name: 'code_screenshot',
+  description:
+    'Render a styled PNG screenshot from a code string (Dracula theme, Iosevka font, macOS style, line numbers, highlight ranges)',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      code: {
+        type: 'string',
+        description: 'Code string to render',
+      },
+      language: {
+        type: 'string',
+        description: 'Programming language for syntax highlighting',
+        default: 'plaintext',
+      },
+      transparent: {
+        type: 'boolean',
+        description: 'Use transparent background',
+        default: false,
+      },
+      highlight: {
+        type: 'string',
+        description: 'Highlight line ranges (e.g., "3,5-7,10")',
+      },
+      scale: {
+        type: 'number',
+        description: 'Device scale factor for higher DPI',
+        default: 2,
+      },
+      titleOverride: {
+        type: 'string',
+        description: 'Custom window title (defaults to language name)',
+      },
     },
+    required: ['code'],
+    additionalProperties: false,
+  },
 
-    handler: async (
-        args: ToolArguments,
-        signal: AbortSignal
-    ) => {
-        const normalized = normalizeArgs(args);
-        const {
-            code,
-            language,
-            transparent,
-            highlight,
-            scale,
-            titleOverride
-        } = normalized;
+  handler: async (args: ToolArguments, signal: AbortSignal) => {
+    const normalized = normalizeArgs(args);
+    const { code, language, transparent, highlight, scale, titleOverride } =
+      normalized;
 
-        if (signal.aborted) {
-            throw new Error('Aborted');
-        }
-
-        const codeLines = code.split('\n');
-        const highlighted = parseHighlightRanges(highlight, codeLines.length);
-
-        const title = titleOverride || (language === 'plaintext' ? 'Code' : language.toUpperCase());
-
-        const { html, usedFallback } = await generateHTML(
-            code,
-            language,
-            highlighted,
-            transparent,
-            title
-        );
-
-        if (signal.aborted) {
-            throw new Error('Aborted');
-        }
-
-        // Setup output directory and filename
-        const outputDir = join(process.cwd(), 'out', 'code_screenshot');
-        await mkdir(outputDir, { recursive: true });
-
-        const timestamp = generateTimestamp();
-        const filename = `Huginn_${timestamp}.png`;
-        const outputPath = join(outputDir, filename);
-
-        // Render with Playwright
-        let browser: import('playwright-core').Browser | undefined;
-        try {
-            browser = await chromium.launch();
-            const context = await browser.newContext({
-                deviceScaleFactor: scale
-            });
-            const page = await context.newPage();
-
-            if (signal.aborted) {
-                throw new Error('Aborted');
-            }
-
-            await page.setContent(html, { waitUntil: 'load' });
-
-            // Reset any horizontal scroll that might cause left-side clipping
-            await page.evaluate(() => {
-                window.scrollTo(0, 0);
-                (document.scrollingElement || document.documentElement).scrollLeft = 0;
-                document.documentElement.scrollLeft = 0;
-                document.body.scrollLeft = 0;
-                const cap = document.getElementById('capture');
-                if (cap) (cap as HTMLElement).scrollLeft = 0;
-            });
-
-            // Resize viewport to fit full content width/height to prevent clipping
-            const { width, height } = await page.evaluate(() => {
-                const el = document.getElementById('capture');
-                if (!el) return { width: 800, height: 600 };
-                const w = Math.ceil((el as HTMLElement).scrollWidth);
-                const h = Math.ceil((el as HTMLElement).scrollHeight);
-                return { width: w, height: h };
-            });
-            const maxDim = 15000; // safety clamp
-            await page.setViewportSize({
-                width: Math.min(Math.max(width, 800), maxDim),
-                height: Math.min(Math.max(height, 600), maxDim)
-            });
-
-            if (signal.aborted) {
-                throw new Error('Aborted');
-            }
-
-            await page.evaluate(() => {
-                const globalRecord = globalThis as Record<string, unknown>;
-                const documentValue = globalRecord.document;
-                if (typeof documentValue === 'object' && documentValue !== null) {
-                    const fontsValue = (documentValue as Record<string, unknown>).fonts;
-                    if (typeof fontsValue === 'object' && fontsValue !== null) {
-                        const readyValue = (fontsValue as Record<string, unknown>).ready;
-                        if (
-                            readyValue &&
-                            typeof readyValue === 'object' &&
-                            'then' in readyValue &&
-                            typeof (readyValue as Promise<unknown>).then === 'function'
-                        ) {
-                            return readyValue as Promise<unknown>;
-                        }
-                    }
-                }
-                return Promise.resolve();
-            });
-
-            const captureElement = await page.$('#capture');
-            if (!captureElement) {
-                throw new Error('Capture element not found');
-            }
-
-            await captureElement.screenshot({
-                path: outputPath,
-                omitBackground: transparent
-            });
-
-            let message = `PNG code screenshot generated: ${outputPath}`;
-            if (usedFallback) {
-                message += ' (using system monospace font - Iosevka not available)';
-            }
-
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: message
-                    }
-                ]
-            };
-        } finally {
-            if (browser) {
-                try {
-                    await browser.close();
-                } catch (closeErr) {
-                    void closeErr;
-                }
-            }
-        }
+    if (signal.aborted) {
+      throw new Error('Aborted');
     }
+
+    const codeLines = code.split('\n');
+    const highlighted = parseHighlightRanges(highlight, codeLines.length);
+
+    const title =
+      titleOverride ||
+      (language === 'plaintext' ? 'Code' : language.toUpperCase());
+
+    const { html, usedFallback } = await generateHTML(
+      code,
+      language,
+      highlighted,
+      transparent,
+      title,
+    );
+
+    if (signal.aborted) {
+      throw new Error('Aborted');
+    }
+
+    // Setup output directory and filename
+    const outputDir = join(process.cwd(), 'out', 'code_screenshot');
+    await mkdir(outputDir, { recursive: true });
+
+    const timestamp = generateTimestamp();
+    const filename = `Huginn_${timestamp}.png`;
+    const outputPath = join(outputDir, filename);
+
+    // Render with Playwright
+    let browser: import('playwright-core').Browser | undefined;
+    try {
+      browser = await chromium.launch();
+      const context = await browser.newContext({
+        deviceScaleFactor: scale,
+      });
+      const page = await context.newPage();
+
+      if (signal.aborted) {
+        throw new Error('Aborted');
+      }
+
+      await page.setContent(html, { waitUntil: 'load' });
+
+      // Reset any horizontal scroll that might cause left-side clipping
+      await page.evaluate(() => {
+        window.scrollTo(0, 0);
+        (document.scrollingElement || document.documentElement).scrollLeft = 0;
+        document.documentElement.scrollLeft = 0;
+        document.body.scrollLeft = 0;
+        const cap = document.getElementById('capture');
+        if (cap) (cap as HTMLElement).scrollLeft = 0;
+      });
+
+      // Resize viewport to fit full content width/height to prevent clipping
+      const { width, height } = await page.evaluate(() => {
+        const el = document.getElementById('capture');
+        if (!el) return { width: 800, height: 600 };
+        const w = Math.ceil((el as HTMLElement).scrollWidth);
+        const h = Math.ceil((el as HTMLElement).scrollHeight);
+        return { width: w, height: h };
+      });
+      const maxDim = 15000; // safety clamp
+      await page.setViewportSize({
+        width: Math.min(Math.max(width, 800), maxDim),
+        height: Math.min(Math.max(height, 600), maxDim),
+      });
+
+      if (signal.aborted) {
+        throw new Error('Aborted');
+      }
+
+      await page.evaluate(() => {
+        const globalRecord = globalThis as Record<string, unknown>;
+        const documentValue = globalRecord.document;
+        if (typeof documentValue === 'object' && documentValue !== null) {
+          const fontsValue = (documentValue as Record<string, unknown>).fonts;
+          if (typeof fontsValue === 'object' && fontsValue !== null) {
+            const readyValue = (fontsValue as Record<string, unknown>).ready;
+            if (
+              readyValue &&
+              typeof readyValue === 'object' &&
+              'then' in readyValue &&
+              typeof (readyValue as Promise<unknown>).then === 'function'
+            ) {
+              return readyValue as Promise<unknown>;
+            }
+          }
+        }
+        return Promise.resolve();
+      });
+
+      const captureElement = await page.$('#capture');
+      if (!captureElement) {
+        throw new Error('Capture element not found');
+      }
+
+      await captureElement.screenshot({
+        path: outputPath,
+        omitBackground: transparent,
+      });
+
+      let message = `PNG code screenshot generated: ${outputPath}`;
+      if (usedFallback) {
+        message += ' (using system monospace font - Iosevka not available)';
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: message,
+          },
+        ],
+      };
+    } finally {
+      if (browser) {
+        try {
+          await browser.close();
+        } catch (closeErr) {
+          void closeErr;
+        }
+      }
+    }
+  },
 };
 
 export const tools = [codeScreenshotTool];
 export default codeScreenshotTool;
 
 export const requiredPackages = {
-    'shiki': '^1.0.0',
-    '@fontsource/iosevka': '^5.0.0'
+  shiki: '^3.12.2',
+  '@fontsource/iosevka': '^5.2.8',
+  playwright: '^1.55.0',
 };

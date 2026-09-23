@@ -1,189 +1,172 @@
-import { access, readdir } from 'fs/promises';
-import { join } from 'path';
-import { pathToFileURL } from 'url';
+import { access, readFile, readdir } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-import type { Tool, ToolListItem, ToolArguments } from './types.js';
-import { EMPTY_TOOL_ARGS } from './types.js';
 import { isPlainObject } from '../utils/typeGuards.js';
+import {
+  EMPTY_TOOL_ARGS,
+  type Tool,
+  type ToolArguments,
+  type ToolListItem,
+} from './types.js';
+
+interface PluginManifest {
+  plugins?: Array<{ name?: unknown }>;
+}
+
+export interface PluginDiagnostic {
+  plugin: string;
+  status: 'loaded' | 'failed';
+  tools: string[];
+  error?: string;
+}
 
 let loadedTools: Tool[] | null = null;
+let diagnostics: PluginDiagnostic[] = [];
 const toolMeta = new Map<string, { dir: string }>();
 
 function isToolCandidate(value: unknown): value is Tool {
-  if (!isPlainObject(value)) {
-    return false;
-  }
-
+  if (!isPlainObject(value)) return false;
   const { name, description, inputSchema, handler } = value;
-  if (typeof name !== 'string' || name.trim() === '') {
-    return false;
-  }
-  if (typeof description !== 'string') {
-    return false;
-  }
-  if (!isPlainObject(inputSchema)) {
-    return false;
-  }
-  if (typeof handler !== 'function') {
-    return false;
-  }
+  return (
+    typeof name === 'string' &&
+    name.trim() !== '' &&
+    typeof description === 'string' &&
+    isPlainObject(inputSchema) &&
+    typeof handler === 'function'
+  );
+}
 
-  return true;
+async function findEntryPoint(dir: string): Promise<string> {
+  for (const filename of ['index.ts', 'index.js']) {
+    const candidate = join(dir, filename);
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // Try the next supported entry point.
+    }
+  }
+  throw new Error('No index.ts or index.js entry point found');
+}
+
+async function enabledPluginNames(
+  root: string,
+): Promise<Set<string> | undefined> {
+  try {
+    const parsed = JSON.parse(
+      await readFile(join(root, 'out', 'plugins-manifest.json'), 'utf8'),
+    ) as PluginManifest;
+    if (!Array.isArray(parsed.plugins)) return undefined;
+    return new Set(
+      parsed.plugins
+        .map((plugin) => plugin.name)
+        .filter((name): name is string => typeof name === 'string'),
+    );
+  } catch {
+    return undefined;
+  }
 }
 
 async function loadPlugins(): Promise<void> {
   if (loadedTools) return;
 
-  const pluginsRoot = join(process.cwd(), 'src', 'plugins');
-  let dirs: string[] = [];
-  try {
-    const entries = await readdir(pluginsRoot, { withFileTypes: true });
-    dirs = entries.filter((e) => e.isDirectory()).map((d) => join(pluginsRoot, d.name));
-  } catch {
-    dirs = [];
-  }
-
-  const tools: Tool[] = [];
+  const root = process.cwd();
+  const pluginsRoot = join(root, 'src', 'plugins');
+  const enabled = await enabledPluginNames(root);
+  const entries = await readdir(pluginsRoot, { withFileTypes: true }).catch(
+    () => [],
+  );
+  const dirs = entries
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        (!enabled ||
+          enabled.has(entry.name) ||
+          entry.name.startsWith('generated_')),
+    )
+    .map((entry) => join(pluginsRoot, entry.name))
+    .sort();
+  const tools = new Map<string, Tool>();
+  diagnostics = [];
   toolMeta.clear();
 
   for (const dir of dirs) {
+    const plugin = basename(dir);
     try {
-      // Try loading .ts first, then .js as fallback
-      const candidates = [join(dir, 'index.ts'), join(dir, 'index.js')];
-      let modPath: string | null = null;
-      for (const candidate of candidates) {
-        try {
-          await access(candidate);
-          modPath = candidate;
-          break;
-        } catch {
-          // File does not exist, try next candidate
-        }
-      }
+      const entryPoint = await findEntryPoint(dir);
+      const moduleValue: unknown = await import(
+        `${pathToFileURL(entryPoint).href}?refresh=${Date.now()}`
+      );
+      const exportedTools = isPlainObject(moduleValue)
+        ? moduleValue.tools
+        : undefined;
+      if (!Array.isArray(exportedTools))
+        throw new Error("Plugin does not export a 'tools' array");
 
-      if (!modPath) throw new Error('No index.ts or index.js found');
-
-      const url = pathToFileURL(modPath).href + `?ts=${Date.now()}`;
-      const mod: unknown = await import(url);
-      const toolsExport = isPlainObject(mod) ? mod.tools : undefined;
-      if (!Array.isArray(toolsExport)) {
-        throw new Error(`Plugin at ${dir} does not export a 'tools' array.`);
+      const names: string[] = [];
+      for (const candidate of exportedTools) {
+        if (!isToolCandidate(candidate))
+          throw new Error('Plugin exports an invalid tool');
+        if (tools.has(candidate.name))
+          throw new Error(`Duplicate tool name: ${candidate.name}`);
+        tools.set(candidate.name, candidate);
+        toolMeta.set(candidate.name, { dir });
+        names.push(candidate.name);
       }
-      for (const item of toolsExport) {
-        if (isToolCandidate(item)) {
-          tools.push(item);
-          toolMeta.set(item.name, { dir });
-        }
-      }
-    } catch (_err) {
-      console.error(`Failed to load plugin at ${dir}:`, _err);
+      diagnostics.push({ plugin, status: 'loaded', tools: names });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      diagnostics.push({ plugin, status: 'failed', tools: [], error: message });
+      console.error(`[Huginn] Failed to load plugin "${plugin}": ${message}`);
     }
   }
 
   const refreshTool: Tool = {
     name: 'refresh_plugins',
-    description: 'Reload plugin modules from disk without restarting the MCP server',
+    description:
+      'Reload enabled plugin modules from disk without restarting the MCP server',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
       properties: {
         plugin: {
           type: 'string',
-          description: 'Optional: refresh only this plugin (tool name or directory name)'
-        }
-      }
+          description:
+            'Optional plugin directory or tool name to verify before reloading',
+        },
+      },
     },
     handler: async (args: ToolArguments = EMPTY_TOOL_ARGS) => {
-      const pluginValue = args.plugin;
-      const plugin = typeof pluginValue === 'string' ? pluginValue : undefined;
-      if (!plugin) {
-        loadedTools = null;
-        await loadPlugins();
-        const toolsNow: Tool[] = loadedTools ?? [];
-        const countAll = toolsNow.length;
-        const names = toolsNow.map((t) => t.name).join(', ');
+      const requested =
+        typeof args.plugin === 'string' ? args.plugin : undefined;
+      loadedTools = null;
+      await loadPlugins();
+      if (
+        requested &&
+        !toolMeta.has(requested) &&
+        !diagnostics.some((item) => item.plugin === requested)
+      ) {
         return {
-          content: [
-            {
-              type: 'text',
-              text: `Plugins reloaded. Total tools: ${countAll}. Tools: ${names}`,
-            },
-          ],
+          content: [{ type: 'text', text: `Plugin not found: ${requested}` }],
+          isError: true,
         };
       }
-
-      const pluginsRoot = join(process.cwd(), 'src', 'plugins');
-      const byTool = toolMeta.get(plugin)?.dir;
-      const candidateDirs = [byTool, join(pluginsRoot, plugin)].filter(
-        (value): value is string => typeof value === 'string',
-      );
-      let reloadedName: string | null = null;
-      for (const dir of candidateDirs) {
-        try {
-          // Try loading .ts first, then .js as fallback
-          const candidates = [join(dir, 'index.ts'), join(dir, 'index.js')];
-          let modPath: string | null = null;
-          for (const candidate of candidates) {
-            try {
-              await access(candidate);
-              modPath = candidate;
-              break;
-            } catch {
-              // File does not exist, try next candidate
-            }
-          }
-
-          if (!modPath) continue;
-
-          const url = pathToFileURL(modPath).href + `?ts=${Date.now()}`;
-          const mod: unknown = await import(url);
-          const arr = isPlainObject(mod) ? mod.tools : undefined;
-          if (!Array.isArray(arr)) continue;
-
-          // Remove any previously loaded tools from this directory
-          if (!loadedTools) loadedTools = [];
-          const toRemove = loadedTools.filter(t => toolMeta.get(t.name)?.dir === dir).map(t => t.name);
-          for (const name of toRemove) {
-            const idx = loadedTools.findIndex(t => t.name === name);
-            if (idx >= 0) loadedTools.splice(idx, 1);
-            toolMeta.delete(name);
-          }
-
-          // Add new tools
-          for (const item of arr) {
-            if (isToolCandidate(item)) {
-              loadedTools.push(item);
-              toolMeta.set(item.name, { dir });
-            }
-          }
-
-          reloadedName = arr[0] && typeof arr[0].name === 'string' ? arr[0].name : null;
-          if (reloadedName) break;
-        } catch (err) {
-          void err;
-        }
-      }
-
-      if (reloadedName) {
-        const toolsNow: Tool[] = loadedTools ?? [];
-        const countAll = toolsNow.length;
-        const names = toolsNow.map((t) => t.name).join(', ');
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Plugin reloaded: ${reloadedName}. Total tools: ${countAll}. Tools: ${names}`,
-            },
-          ],
-        };
-      }
-      return { content: [{ type: 'text', text: `Plugin not found: ${plugin}` }], isError: true };
+      const failures = diagnostics.filter((item) => item.status === 'failed');
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Plugins reloaded. ${toolRegistry.listTools().length} tools available; ${failures.length} plugin(s) failed.`,
+          },
+        ],
+        isError: failures.length > 0,
+      };
     },
   };
 
-  tools.push(refreshTool);
-
-  loadedTools = tools;
+  tools.set(refreshTool.name, refreshTool);
+  loadedTools = [...tools.values()];
 }
 
 export const toolRegistry = {
@@ -192,12 +175,21 @@ export const toolRegistry = {
   },
 
   listTools(): ToolListItem[] {
-    if (!loadedTools) return [];
-    return loadedTools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema }));
+    return (loadedTools ?? []).map(({ name, description, inputSchema }) => ({
+      name,
+      description,
+      inputSchema,
+    }));
   },
 
   getTool(name: string): Tool | undefined {
-    if (!loadedTools) return undefined;
-    return loadedTools.find((tool) => tool.name === name);
+    return loadedTools?.find((tool) => tool.name === name);
+  },
+
+  getDiagnostics(): PluginDiagnostic[] {
+    return diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      tools: [...diagnostic.tools],
+    }));
   },
 };

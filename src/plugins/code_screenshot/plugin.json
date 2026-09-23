@@ -1,0 +1,15 @@
+{
+  "name": "code_screenshot",
+  "description": "Render highlighted source code as a PNG image.",
+  "tools": [
+    {
+      "name": "code_screenshot",
+      "description": "Render a styled PNG from source code"
+    }
+  ],
+  "requiredPackages": {
+    "@fontsource/iosevka": "^5.2.8",
+    "playwright": "^1.55.0",
+    "shiki": "^3.12.2"
+  }
+}

@@ -10,8 +10,8 @@ Huginn
 
 </div>
 
-
 ## Stack
+
 | What     | Info                                                    |
 | -------- | ------------------------------------------------------- |
 | Language | TypeScript — because JavaScript without types is chaos. |
@@ -60,157 +60,95 @@ Everything revolves around this simple contract, mess it up, and Huginn will pol
 
 Think of it as OpenAPI’s introverted cousin — minimal, yet oddly particular.
 
-## Getting Started - Let's see if it even runs
+## Getting Started
+
+Huginn requires [Bun](https://bun.sh/). The one-command setup installs the server and all bundled plugin dependencies:
 
 ```shell
-bun install
-bun install-plugins    # discover and install plugin dependencies
-bun start              # starts the MCP server (stdio transport)
-# dev: bun dev
-# tests: bun test && bun typecheck
-```
-
-Press <kbd>Ctrl</kbd>+<kbd>C</kbd> to stop it like a civilized human, not by closing the terminal window.
-
-<details>
-<summary>
-<strong>
-Available scripts
-</strong>
-</summary>
-
-```shell
-# Install dependencies
-bun install
-
-# Start the MCP server
+bun run setup
+bunx playwright install chromium # required only by image-rendering plugins
+bun run doctor
 bun start
-
-# Development with watch mode
-bun dev
-
-# Run tests
-bun test
-bun test:watch     # watch mode
-bun coverage       # with coverage
-
-# Type checking
-bun typecheck
-
-# Linting & formatting
-bun lint
-bun lint:fix
-bun format
-bun format:write
-
-# Install MCP plugins
-bun install-plugins
 ```
 
-</details>
-
-## Adding a Tool (the Right Way)
-
-Edit `src/tools/registry.ts` and drop in an object that follows the contract above.
-
-If your tool might take longer than a tweet to execute, use the provided `AbortSignal` and wrap it with `safeToolExecution`.
-
-<details>
-<summary>
-Example
-</summary>
-
-```ts
-// src/tools/registry.ts
-{
-  name: 'my_tool',
-  description: 'Echo text back',
-  inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
-  handler: async (args, signal) => ({
-    content: [{ type: 'text', text: `You sent: ${String(args.text)}` }]
-  })
-}
-```
-</details>
-
-Write a test in `test/`, because future you will forget what this tool does.
-
-## Plugin System - For the modular minded
-
-Huginn supports a plugin architecture for organizing tools into separate modules.
-
-### Installing Plugin Dependencies
+To enable only the plugins you need at runtime, select them explicitly instead:
 
 ```shell
-# Interactive plugin selection (default)
-bun install-plugins
-
-# Install all plugins automatically
-bun install-plugins --all
-
-# Auto-confirm dependency installation
-bun install-plugins --yes
-
-# Combine options
-bun install-plugins --all --yes
+bun install
+bun plugins --list
+bun plugins --plugin mcp_tooling --yes
+bun start
 ```
 
-**Interactive Mode (Default):**
-- Shows all available plugins with descriptions
-- Lets you select which plugins to install
-- Enter numbers (e.g., "1 3"), "all", or "none"
+The server uses MCP's stdio transport, so stdout is reserved for protocol messages. Diagnostics are written to stderr.
 
-**Command Options:**
-- `--all` or `-a`: Install all plugins without prompting
-- `--yes` or `-y`: Auto-confirm `bun install` step
+### Development commands
 
-This will:
-1. Discover plugin folders at `src/plugins/*/index.ts`
-2. Let you choose which plugin folders to install (interactive mode)
-3. Add missing packages declared by that folder’s `requiredPackages` to your `package.json`
-4. Optionally run `bun install` to actually install them
-5. Generate a manifest in `out/plugins-manifest.json` with folder names and tool lists
+```shell
+bun dev             # restart on source changes
+bun test            # run unit and integration tests
+bun run check       # typecheck, lint, formatting, and tests
+bun run format:write
+bun run doctor      # verify the manifest and load every enabled plugin
+```
 
-### Creating a Plugin
+## Adding a Plugin
 
-Create a directory under `src/plugins/your-plugin-name/` with an `index.ts` file:
+Each directory under `src/plugins/` contains an `index.ts` runtime entry point and a static `plugin.json`. Static metadata lets the installer discover dependencies without importing a plugin whose optional packages have not been installed yet.
+
+```text
+src/plugins/my-plugin/
+├── index.ts
+└── plugin.json
+```
 
 ```ts
-// src/plugins/my-plugin/index.ts
-export const myTool = {
-  name: 'my_tool',
-  description: 'Does something useful',
+// index.ts
+import type { Tool } from '../../tools/types.js';
+
+const echo: Tool = {
+  name: 'echo',
+  description: 'Echo text back',
   inputSchema: {
     type: 'object',
     properties: { text: { type: 'string' } },
-    required: ['text']
+    required: ['text'],
+    additionalProperties: false,
   },
-  handler: async (args, signal) => ({
-    content: [{ type: 'text', text: `Processed: ${args.text}` }]
-  })
+  handler: async (args, signal) => {
+    if (signal.aborted) throw new Error('Aborted');
+    return { content: [{ type: 'text', text: String(args.text) }] };
+  },
 };
 
-export const anotherTool = {
-  name: 'another_tool',
-  description: 'Does something else useful',
-  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-  handler: async (_args, _signal) => ({
-    content: [{ type: 'text', text: 'All good.' }]
-  })
-};
-
-// The only thing the loader cares about
-export const tools = [myTool, anotherTool];
-
-// Optional: per-plugin dependencies (installed via `bun install-plugins`)
-export const requiredPackages = {
-  'some-package': '^1.0.0'
-};
+export const tools = [echo];
 ```
 
-Then run `bun install-plugins` to register the whole folder and install its dependencies.
+```json
+{
+  "name": "my-plugin",
+  "description": "Example plugin",
+  "tools": [{ "name": "echo", "description": "Echo text back" }],
+  "requiredPackages": {}
+}
+```
+
+Enable it with `bun plugins --plugin my-plugin --yes`. The installer writes `out/plugins-manifest.json`; when this file exists, only selected plugins (plus locally generated plugins) are loaded. Without it, Huginn attempts to load every discovered plugin for backwards compatibility.
+
+### Plugin CLI
+
+```shell
+bun plugins --list                         # inspect plugins without importing them
+bun plugins                                # interactive selection
+bun plugins --all --yes                    # enable all and install dependencies
+bun plugins --plugin my-plugin --yes       # enable one or more named plugins
+bun plugins --all --no-install             # update manifest/package.json only
+```
+
+The loader validates tool exports, rejects duplicate names, keeps per-plugin diagnostics, and reports failures through `bun run doctor`. `refresh_plugins` reloads enabled modules without restarting the MCP process.
 
 ### Generated Tools (quality-of-life, not sorcery)
+
 - `create_mcp_tool`: scaffold a new plugin folder with a properly tagged tool name (`generated_<base>`), path-safe writes, optional dependency add, optional install (you confirm), and auto-refresh.
 - `remove_generated_tool`: deletes only tools that were generated (header + `generated_` prefix) and refreshes the registry.
 - `rename_generated_tool`: renames a generated tool (folder + tool name), with safety checks, then refresh.
@@ -221,9 +159,11 @@ Rules are simple: you bring the logic, Huginn brings the boundaries. Stay inside
 ## Included Plugins
 
 ### code_screenshot
+
 Render a styled PNG from a code string with syntax highlighting, line numbers, and optional line highlighting.
 
 Args:
+
 - code (string, required)
 - language (string, default: "plaintext")
 - transparent (boolean, default: false)
@@ -232,6 +172,7 @@ Args:
 - titleOverride (string)
 
 Notes:
+
 - Fixed line height (18px) and preserved indentation; empty lines keep height.
 - Highlight uses an inset left bar (no layout shift) and avoids first-glyph overlap.
 - Very long lines are supported; the viewport auto-expands to capture full width.
@@ -239,9 +180,11 @@ Notes:
 - Iosevka is embedded when available; falls back to system monospace.
 
 ### visualize_diff_image
+
 Generate HTML or PNG from a unified diff.
 
 Args:
+
 - diff (string, required)
 - format ("html" | "image", default: "html")
 - outputType ("side-by-side" | "line-by-line", default: "side-by-side")
@@ -249,15 +192,19 @@ Args:
 ## Built-in Management Tools
 
 ### refresh_plugins
+
 Reload plugins without restarting the server.
 
 Schema:
+
 - plugin (string, optional): tool name or plugin directory to refresh only that plugin.
 
 Examples:
+
 ```json
 { "name": "refresh_plugins", "arguments": {} }
 ```
+
 ```json
 { "name": "refresh_plugins", "arguments": { "plugin": "code_screenshot" } }
 ```
@@ -270,6 +217,7 @@ Timeout: `MCP_TOOL_TIMEOUT_MS` (milliseconds).
 — Yes, you can set it to Infinity, but don’t.
 
 ## Roadmap - Aka. “The Illusion of Progress”
+
 <details> <summary>Planned items</summary>
 
 Minimal example MCP client (stdio) demonstrating ListTools + CallTool flows.

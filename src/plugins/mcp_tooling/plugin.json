@@ -1,0 +1,20 @@
+{
+  "name": "mcp_tooling",
+  "description": "Create, edit, rename, and remove locally generated MCP tools.",
+  "tools": [
+    { "name": "create_mcp_tool", "description": "Create a generated MCP tool" },
+    {
+      "name": "edit_generated_tool",
+      "description": "Edit a generated MCP tool"
+    },
+    {
+      "name": "rename_generated_tool",
+      "description": "Rename a generated MCP tool"
+    },
+    {
+      "name": "remove_generated_tool",
+      "description": "Remove a generated MCP tool"
+    }
+  ],
+  "requiredPackages": {}
+}

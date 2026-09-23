@@ -17,7 +17,7 @@ class HuginnMCPServer {
     this.server = new Server(
       {
         name: 'huginn',
-        version: '1.0.0',
+        version: '1.1.0',
       },
       {
         capabilities: {
@@ -25,11 +25,9 @@ class HuginnMCPServer {
         },
       },
     );
-
-    this.initialize();
   }
 
-  private async initialize() {
+  private async initialize(): Promise<void> {
     await toolRegistry.init();
     this.setupHandlers();
 
@@ -47,8 +45,13 @@ class HuginnMCPServer {
       const tool = toolRegistry.getTool(request.params.name);
 
       if (!tool) {
-        const availableNames = toolRegistry.listTools().map((t) => t.name).join(', ');
-        console.error(`[Huginn] Unknown tool requested: ${request.params.name}`);
+        const availableNames = toolRegistry
+          .listTools()
+          .map((t) => t.name)
+          .join(', ');
+        console.error(
+          `[Huginn] Unknown tool requested: ${request.params.name}`,
+        );
         const result: CallToolResult = {
           isError: true,
           content: [
@@ -73,6 +76,7 @@ class HuginnMCPServer {
   }
 
   async run(): Promise<void> {
+    await this.initialize();
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error('[Huginn] MCP server running (stdio).');

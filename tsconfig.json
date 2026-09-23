@@ -13,8 +13,6 @@
     "noUnusedLocals": false,
     "noUnusedParameters": true,
     "noPropertyAccessFromIndexSignature": false,
-    "types": [
-      "bun-types"
-    ]
+    "types": ["bun-types"]
   }
 }

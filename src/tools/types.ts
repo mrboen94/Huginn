@@ -6,7 +6,10 @@ export interface Tool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  handler: (args: ToolArguments, signal: AbortSignal) => Promise<CallToolResult>;
+  handler: (
+    args: ToolArguments,
+    signal: AbortSignal,
+  ) => Promise<CallToolResult>;
 }
 
 export interface ToolListItem {

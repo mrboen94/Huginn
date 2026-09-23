@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { CallToolResult, TextContent } from '@modelcontextprotocol/sdk/types.js';
+import type {
+  CallToolResult,
+  TextContent,
+} from '@modelcontextprotocol/sdk/types.js';
 import {
   safeToolExecution,
   TimeoutError,
@@ -31,13 +34,13 @@ describe('safeToolExecution', () => {
   });
 
   it('should handle timeout with proper error response and async logging', async () => {
-    const handler = async (
-      signal: AbortSignal,
-    ): Promise<CallToolResult> => {
+    const handler = async (signal: AbortSignal): Promise<CallToolResult> => {
       return new Promise((resolve) => {
         const timeout = setTimeout(() => {
           resolve({
-            content: [{ type: 'text', text: 'Never reached' } satisfies TextContent],
+            content: [
+              { type: 'text', text: 'Never reached' } satisfies TextContent,
+            ],
             isError: false,
           });
         }, 100);
@@ -57,7 +60,7 @@ describe('safeToolExecution', () => {
     expect(result.content).toEqual([
       {
         type: 'text',
-        text: 'Tool execution failed: Tool test-tool timed out after 10 ms'
+        text: 'Tool execution failed: Tool test-tool timed out after 10 ms',
       },
     ]);
 
@@ -92,11 +95,14 @@ describe('safeToolExecution', () => {
     expect(result.content).toEqual([
       {
         type: 'text',
-        text: 'Tool execution failed: Test error message'
+        text: 'Tool execution failed: Test error message',
       },
     ]);
 
-    expect(result.content[0]?.text).not.toContain('at ');
+    expect(result.content[0]).toMatchObject({ type: 'text' });
+    if (result.content[0]?.type === 'text') {
+      expect(result.content[0].text).not.toContain('at ');
+    }
 
     expect(mockLogger).not.toHaveBeenCalled();
 
@@ -129,7 +135,7 @@ describe('safeToolExecution', () => {
     expect(result.content).toEqual([
       {
         type: 'text',
-        text: 'Tool execution failed: Unknown error'
+        text: 'Tool execution failed: Unknown error',
       },
     ]);
 
@@ -152,7 +158,9 @@ describe('safeToolExecution', () => {
       const handler = async (): Promise<CallToolResult> => {
         await new Promise((resolve) => setTimeout(resolve, 100));
         return {
-          content: [{ type: 'text', text: 'Never reached' } satisfies TextContent],
+          content: [
+            { type: 'text', text: 'Never reached' } satisfies TextContent,
+          ],
           isError: false,
         };
       };
@@ -162,7 +170,10 @@ describe('safeToolExecution', () => {
       });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('timed out after 50 ms');
+      expect(result.content[0]).toMatchObject({ type: 'text' });
+      if (result.content[0]?.type === 'text') {
+        expect(result.content[0].text).toContain('timed out after 50 ms');
+      }
     } finally {
       if (originalEnv !== undefined) {
         process.env.MCP_TOOL_TIMEOUT_MS = originalEnv;
