@@ -32,10 +32,16 @@ interface PackageJson {
 
 function indentLines(s: string, spaces = 4): string {
   const pad = ' '.repeat(spaces);
-  return s.split('\n').map(line => (line ? pad + line : line)).join('\n');
+  return s
+    .split('\n')
+    .map((line) => (line ? pad + line : line))
+    .join('\n');
 }
 
-function detectDangerousPatterns(src: string): { blocking: string[]; warnings: string[] } {
+function detectDangerousPatterns(src: string): {
+  blocking: string[];
+  warnings: string[];
+} {
   const blocking: string[] = [];
   const warnings: string[] = [];
   const checks: Array<{ re: RegExp; label: string; warn?: boolean }> = [
@@ -58,7 +64,11 @@ function detectDangerousPatterns(src: string): { blocking: string[]; warnings: s
     { re: /\bvm\./, label: 'vm module' },
     { re: /\.\.\//, label: '../ path traversal' },
     { re: /\bprocess\.env\b/, label: 'process.env', warn: true },
-    { re: /\b(?:from\s+['"][\w@/-]+['"]|require\(\s*['"][\w@/-]+['"]\s*\)|import\(\s*['"][\w@/-]+['"]\s*\))/, label: 'dynamic import', warn: true },
+    {
+      re: /\b(?:from\s+['"][\w@/-]+['"]|require\(\s*['"][\w@/-]+['"]\s*\)|import\(\s*['"][\w@/-]+['"]\s*\))/,
+      label: 'dynamic import',
+      warn: true,
+    },
   ];
   for (const c of checks) {
     if (c.re.test(src)) {
@@ -76,8 +86,12 @@ function textResponse(message: string, isError = true): CallToolResult {
   };
 }
 
-async function updateDependencies(projectRoot: string, deps: Record<string, string> | undefined) {
-  if (!deps || Object.keys(deps).length === 0) return { updated: false, added: [] as string[] };
+async function updateDependencies(
+  projectRoot: string,
+  deps: Record<string, string> | undefined,
+) {
+  if (!deps || Object.keys(deps).length === 0)
+    return { updated: false, added: [] as string[] };
   const pkgPath = path.join(projectRoot, 'package.json');
   const raw = await readFile(pkgPath, 'utf8');
   const pkg: PackageJson = JSON.parse(raw);
@@ -97,11 +111,28 @@ async function updateDependencies(projectRoot: string, deps: Record<string, stri
 }
 
 async function runBunInstall(projectRoot: string, timeoutMs: number) {
-  return await new Promise<{ ok: boolean; code: number | null; signal?: string; reason?: string }>((resolve) => {
-    const child = spawn('bun', ['install'], { cwd: projectRoot, stdio: 'inherit', env: process.env });
+  return await new Promise<{
+    ok: boolean;
+    code: number | null;
+    signal?: string;
+    reason?: string;
+  }>((resolve) => {
+    const child = spawn('bun', ['install'], {
+      cwd: projectRoot,
+      stdio: 'inherit',
+      env: process.env,
+    });
     const timer = setTimeout(() => {
-      try { child.kill('SIGKILL'); } catch { /* ignore */ }
-      resolve({ ok: false, code: null, reason: `Timed out after ${timeoutMs}ms` });
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        /* ignore */
+      }
+      resolve({
+        ok: false,
+        code: null,
+        reason: `Timed out after ${timeoutMs}ms`,
+      });
     }, timeoutMs);
     child.on('exit', (code, signal) => {
       clearTimeout(timer);
@@ -121,7 +152,8 @@ const GENERATED_HEADER_MARKERS = [
 
 const tool = {
   name: 'edit_generated_tool',
-  description: 'Edit a generated MCP plugin. Only tools with generated_ prefix and generator header are allowed.',
+  description:
+    'Edit a generated MCP plugin. Only tools with generated_ prefix and generator header are allowed.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
@@ -131,27 +163,45 @@ const tool = {
       description: { type: 'string' },
       input_schema: { type: 'object' },
       handler_code: { type: 'string' },
-      required_packages: { type: 'object', additionalProperties: { type: 'string' } },
+      required_packages: {
+        type: 'object',
+        additionalProperties: { type: 'string' },
+      },
       allow_unsafe: { type: 'boolean', default: false },
-      install_dependencies: { type: 'boolean', default: false }
-    }
+      install_dependencies: { type: 'boolean', default: false },
+    },
   },
   handler: async (args: ToolArguments, signal: AbortSignal) => {
     if (signal.aborted) throw new Error('Aborted');
 
-    const toolNameArg = typeof args.tool_name === 'string' ? args.tool_name : undefined;
-    const baseNameArg = typeof args.base_name === 'string' ? args.base_name : undefined;
-    const descArg = typeof args.description === 'string' ? args.description : undefined;
+    const toolNameArg =
+      typeof args.tool_name === 'string' ? args.tool_name : undefined;
+    const baseNameArg =
+      typeof args.base_name === 'string' ? args.base_name : undefined;
+    const descArg =
+      typeof args.description === 'string' ? args.description : undefined;
     const schemaCandidate = args.input_schema;
-    const schemaArg = isPlainObject(schemaCandidate) ? schemaCandidate : undefined;
-    const handlerCodeArg = typeof args.handler_code === 'string' ? args.handler_code : undefined;
-    const reqPkgsArg = isRecordOfStrings(args.required_packages) ? args.required_packages : undefined;
+    const schemaArg = isPlainObject(schemaCandidate)
+      ? schemaCandidate
+      : undefined;
+    const handlerCodeArg =
+      typeof args.handler_code === 'string' ? args.handler_code : undefined;
+    const reqPkgsArg = isRecordOfStrings(args.required_packages)
+      ? args.required_packages
+      : undefined;
     const allowUnsafe = args.allow_unsafe === true;
     const installDeps = args.install_dependencies === true;
 
-    const finalName = toolNameArg ?? (baseNameArg ? `generated_${baseNameArg}` : undefined);
-    if (!finalName || !finalName.startsWith('generated_') || (baseNameArg && !isValidBaseName(baseNameArg))) {
-      return textResponse('Provide tool_name (generated_*) or valid base_name.');
+    const finalName =
+      toolNameArg ?? (baseNameArg ? `generated_${baseNameArg}` : undefined);
+    if (
+      !finalName ||
+      !finalName.startsWith('generated_') ||
+      (baseNameArg && !isValidBaseName(baseNameArg))
+    ) {
+      return textResponse(
+        'Provide tool_name (generated_*) or valid base_name.',
+      );
     }
 
     const projectRoot = process.cwd();
@@ -170,18 +220,31 @@ const tool = {
     else return textResponse('index.ts/js not found for tool');
 
     const source = await readFile(filePath, 'utf8');
-    const isGenerated = GENERATED_HEADER_MARKERS.some(m => source.includes(m));
+    const isGenerated = GENERATED_HEADER_MARKERS.some((m) =>
+      source.includes(m),
+    );
     if (!isGenerated) {
-      return textResponse('Refusing to edit: not recognized as a generated tool.');
+      return textResponse(
+        'Refusing to edit: not recognized as a generated tool.',
+      );
     }
 
     if (handlerCodeArg) {
       const issues = detectDangerousPatterns(handlerCodeArg);
-      if ((issues.blocking.length > 0 || issues.warnings.length > 0) && !allowUnsafe) {
+      if (
+        (issues.blocking.length > 0 || issues.warnings.length > 0) &&
+        !allowUnsafe
+      ) {
         const msg = [
-          issues.blocking.length ? `Blocking: ${issues.blocking.join(', ')}` : '',
-          issues.warnings.length ? `Warnings: ${issues.warnings.join(', ')}` : ''
-        ].filter(Boolean).join(' | ');
+          issues.blocking.length
+            ? `Blocking: ${issues.blocking.join(', ')}`
+            : '',
+          issues.warnings.length
+            ? `Warnings: ${issues.warnings.join(', ')}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join(' | ');
         return textResponse(`Unsafe constructs detected. Aborting. ${msg}`);
       }
     }
@@ -231,7 +294,9 @@ const tool = {
       return null;
     }
 
-    const currentHandlerBody = extractHandlerBody() ?? "return [{ type: 'text', text: 'ok' }];";
+    const currentHandlerBody =
+      extractHandlerBody() ??
+      "return { content: [{ type: 'text', text: 'ok' }] };";
 
     function extractRequiredPackages(): string | null {
       const key = 'export const requiredPackages =';
@@ -254,14 +319,20 @@ const tool = {
     const currentReqPkgsStr = extractRequiredPackages();
 
     const newDesc = descArg ?? currentDesc;
-    const newSchemaStr = schemaArg ? JSON.stringify(schemaArg, null, 2) : currentSchemaStr;
+    const newSchemaStr = schemaArg
+      ? JSON.stringify(schemaArg, null, 2)
+      : currentSchemaStr;
     const newHandlerBody = handlerCodeArg ?? currentHandlerBody;
-    const newReqPkgsStr = reqPkgsArg ? JSON.stringify(reqPkgsArg, null, 2) : currentReqPkgsStr;
+    const newReqPkgsStr = reqPkgsArg
+      ? JSON.stringify(reqPkgsArg, null, 2)
+      : currentReqPkgsStr;
 
     const headerLine = source.split('\n', 1)[0] ?? '';
 
     const rebuilt = [
-      headerLine.includes('[generated-tool]') ? headerLine : "// [generated-tool] This tool was generated by create_mcp_tool",
+      headerLine.includes('[generated-tool]')
+        ? headerLine
+        : '// [generated-tool] This tool was generated by create_mcp_tool',
       '',
       newReqPkgsStr ? `export const requiredPackages = ${newReqPkgsStr};` : '',
       'const tool = {',
@@ -275,10 +346,31 @@ const tool = {
       '};',
       '',
       'export default tool;',
-      ''
-    ].filter(Boolean).join('\n');
+      'export const tools = [tool];',
+      '',
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     await writeFile(filePath, rebuilt, 'utf8');
+    await writeFile(
+      path.join(pluginDir, 'plugin.json'),
+      `${JSON.stringify(
+        {
+          name: finalName,
+          description: newDesc,
+          tools: [{ name: finalName, description: newDesc }],
+          requiredPackages:
+            reqPkgsArg ??
+            (currentReqPkgsStr
+              ? JSON.parse(currentReqPkgsStr.replace(/'/g, '"'))
+              : {}),
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
 
     let depsUpdated = false;
     let depsAdded: string[] = [];
@@ -302,18 +394,26 @@ const tool = {
         const refreshArgs: ToolArguments = { plugin: finalName };
         await refresh.handler(refreshArgs, signal);
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     const lines = [
       `Edited generated tool: ${finalName}`,
       descArg ? 'Updated description' : '',
       schemaArg ? 'Updated input_schema' : '',
       handlerCodeArg ? 'Updated handler_code' : '',
-      reqPkgsArg ? (depsUpdated ? `Updated dependencies: ${depsAdded.join(', ')}` : 'Dependencies unchanged') : ''
-    ].filter(Boolean).join(' | ');
+      reqPkgsArg
+        ? depsUpdated
+          ? `Updated dependencies: ${depsAdded.join(', ')}`
+          : 'Dependencies unchanged'
+        : '',
+    ]
+      .filter(Boolean)
+      .join(' | ');
 
     return textResponse(lines || `Edited ${finalName}`, false);
-  }
+  },
 };
 
 export default tool;

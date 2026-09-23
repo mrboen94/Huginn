@@ -30,7 +30,8 @@ const GENERATED_HEADER_MARKERS = [
 
 const tool = {
   name: 'remove_generated_tool',
-  description: 'Remove a generated MCP plugin (only tools with generated_ prefix and generator header).',
+  description:
+    'Remove a generated MCP plugin (only tools with generated_ prefix and generator header).',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
@@ -38,34 +39,54 @@ const tool = {
       tool_name: {
         type: 'string',
         description: 'Full tool name starting with generated_',
-        pattern: '^generated_[a-z0-9_]+$'
+        pattern: '^generated_[a-z0-9_]+$',
       },
       base_name: {
         type: 'string',
         description: 'Base name without prefix (snake_case)',
-        pattern: '^[a-z0-9_]+$'
-      }
-    }
+        pattern: '^[a-z0-9_]+$',
+      },
+    },
   },
   handler: async (args: ToolArguments, signal: AbortSignal) => {
     if (signal.aborted) throw new Error('Aborted');
 
-    const toolNameArg = typeof args.tool_name === 'string' ? args.tool_name : undefined;
-    const baseNameArg = typeof args.base_name === 'string' ? args.base_name : undefined;
+    const toolNameArg =
+      typeof args.tool_name === 'string' ? args.tool_name : undefined;
+    const baseNameArg =
+      typeof args.base_name === 'string' ? args.base_name : undefined;
 
     if (!toolNameArg && !baseNameArg) {
-      return { content: [{ type: 'text', text: 'Provide tool_name (generated_*) or base_name.' }], isError: true };
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Provide tool_name (generated_*) or base_name.',
+          },
+        ],
+        isError: true,
+      };
     }
 
     let finalName: string;
     if (toolNameArg) {
       if (!toolNameArg.startsWith('generated_')) {
-        return { content: [{ type: 'text', text: 'tool_name must start with generated_.' }], isError: true };
+        return {
+          content: [
+            { type: 'text', text: 'tool_name must start with generated_.' },
+          ],
+          isError: true,
+        };
       }
       finalName = toolNameArg;
     } else {
       if (!isValidBaseName(baseNameArg!)) {
-        return { content: [{ type: 'text', text: 'base_name must match ^[a-z0-9_]+$.' }], isError: true };
+        return {
+          content: [
+            { type: 'text', text: 'base_name must match ^[a-z0-9_]+$.' },
+          ],
+          isError: true,
+        };
       }
       finalName = `generated_${baseNameArg}`;
     }
@@ -75,11 +96,21 @@ const tool = {
     const pluginDir = path.join(pluginsRoot, finalName);
 
     if (!ensureInsideBase(pluginsRoot, pluginDir)) {
-      return { content: [{ type: 'text', text: 'Refusing to operate outside src/plugins.' }], isError: true };
+      return {
+        content: [
+          { type: 'text', text: 'Refusing to operate outside src/plugins.' },
+        ],
+        isError: true,
+      };
     }
 
     if (!(await fileExists(pluginDir))) {
-      return { content: [{ type: 'text', text: `Plugin directory not found: ${pluginDir}` }], isError: true };
+      return {
+        content: [
+          { type: 'text', text: `Plugin directory not found: ${pluginDir}` },
+        ],
+        isError: true,
+      };
     }
 
     const tsPath = path.join(pluginDir, 'index.ts');
@@ -88,14 +119,22 @@ const tool = {
     let headerOk = false;
     if (await fileExists(tsPath)) {
       const src = await readFile(tsPath, 'utf8');
-      headerOk = GENERATED_HEADER_MARKERS.some(m => src.includes(m));
+      headerOk = GENERATED_HEADER_MARKERS.some((m) => src.includes(m));
     } else if (await fileExists(jsPath)) {
       const src = await readFile(jsPath, 'utf8');
-      headerOk = GENERATED_HEADER_MARKERS.some(m => src.includes(m));
+      headerOk = GENERATED_HEADER_MARKERS.some((m) => src.includes(m));
     }
 
     if (!headerOk || !finalName.startsWith('generated_')) {
-      return { content: [{ type: 'text', text: 'Refusing to remove: not recognized as a generated tool.' }], isError: true };
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Refusing to remove: not recognized as a generated tool.',
+          },
+        ],
+        isError: true,
+      };
     }
 
     await rm(pluginDir, { recursive: true, force: false });
@@ -110,8 +149,10 @@ const tool = {
       // ignore
     }
 
-    return { content: [{ type: 'text', text: `Removed generated tool: ${finalName}` }] };
-  }
+    return {
+      content: [{ type: 'text', text: `Removed generated tool: ${finalName}` }],
+    };
+  },
 };
 
 export default tool;

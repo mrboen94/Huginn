@@ -15,7 +15,10 @@ interface PackageJson {
   [key: string]: unknown;
 }
 
-function detectDangerousPatterns(src: string): { blocking: string[]; warnings: string[] } {
+function detectDangerousPatterns(src: string): {
+  blocking: string[];
+  warnings: string[];
+} {
   const blocking: string[] = [];
   const warnings: string[] = [];
   const checks: Array<{ re: RegExp; label: string; warn?: boolean }> = [
@@ -38,7 +41,11 @@ function detectDangerousPatterns(src: string): { blocking: string[]; warnings: s
     { re: /\bvm\./, label: 'vm module' },
     { re: /\.\.\//, label: '../ path traversal' },
     { re: /\bprocess\.env\b/, label: 'process.env', warn: true },
-    { re: /\b(?:from\s+['"]\w+['"]|require\(\s*['"]\w+['"]\s*\)|import\(\s*['"]\w+['"]\s*\))/, label: 'http/https/net module', warn: true },
+    {
+      re: /\b(?:from\s+['"]\w+['"]|require\(\s*['"]\w+['"]\s*\)|import\(\s*['"]\w+['"]\s*\))/,
+      label: 'http/https/net module',
+      warn: true,
+    },
   ];
   for (const c of checks) {
     if (c.re.test(src)) {
@@ -57,7 +64,10 @@ function ensureInsideBase(baseDir: string, target: string): boolean {
 
 function indentLines(s: string, spaces = 4): string {
   const pad = ' '.repeat(spaces);
-  return s.split('\n').map(line => (line ? pad + line : line)).join('\n');
+  return s
+    .split('\n')
+    .map((line) => (line ? pad + line : line))
+    .join('\n');
 }
 
 function textResponse(msg: string, isError = true): CallToolResult {
@@ -67,8 +77,12 @@ function textResponse(msg: string, isError = true): CallToolResult {
   };
 }
 
-async function updateDependencies(projectRoot: string, deps: StringMap | undefined) {
-  if (!deps || Object.keys(deps).length === 0) return { updated: false, added: [] as string[] };
+async function updateDependencies(
+  projectRoot: string,
+  deps: StringMap | undefined,
+) {
+  if (!deps || Object.keys(deps).length === 0)
+    return { updated: false, added: [] as string[] };
   const pkgPath = path.join(projectRoot, 'package.json');
   const raw = await fs.readFile(pkgPath, 'utf8');
   const pkg: PackageJson = JSON.parse(raw);
@@ -88,11 +102,28 @@ async function updateDependencies(projectRoot: string, deps: StringMap | undefin
 }
 
 async function runBunInstall(projectRoot: string, timeoutMs: number) {
-  return await new Promise<{ ok: boolean; code: number | null; signal?: string; reason?: string }>((resolve) => {
-    const child = spawn('bun', ['install'], { cwd: projectRoot, stdio: 'inherit', env: process.env });
+  return await new Promise<{
+    ok: boolean;
+    code: number | null;
+    signal?: string;
+    reason?: string;
+  }>((resolve) => {
+    const child = spawn('bun', ['install'], {
+      cwd: projectRoot,
+      stdio: 'inherit',
+      env: process.env,
+    });
     const timer = setTimeout(() => {
-      try { child.kill('SIGKILL'); } catch { /* ignore */ }
-      resolve({ ok: false, code: null, reason: `Timed out after ${timeoutMs}ms` });
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        /* ignore */
+      }
+      resolve({
+        ok: false,
+        code: null,
+        reason: `Timed out after ${timeoutMs}ms`,
+      });
     }, timeoutMs);
     child.on('exit', (code, signal) => {
       clearTimeout(timer);
@@ -107,7 +138,8 @@ async function runBunInstall(projectRoot: string, timeoutMs: number) {
 
 const tool = {
   name: 'create_mcp_tool',
-  description: 'Create a new, tagged MCP plugin tool and optionally install dependencies; auto-refresh registry.',
+  description:
+    'Create a new, tagged MCP plugin tool and optionally install dependencies; auto-refresh registry.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
@@ -117,7 +149,10 @@ const tool = {
       input_schema: { type: 'object' },
       handler_code: { type: 'string' },
       template: { type: 'string', enum: ['echo', 'json_transform'] },
-      required_packages: { type: 'object', additionalProperties: { type: 'string' } },
+      required_packages: {
+        type: 'object',
+        additionalProperties: { type: 'string' },
+      },
       allow_unsafe: { type: 'boolean', default: false },
       install_dependencies: { type: 'boolean', default: false },
     },
@@ -130,17 +165,27 @@ const tool = {
     const baseName = typeof baseNameValue === 'string' ? baseNameValue : '';
     const descriptionValue = args['description'];
     const inputSchemaValue = args['input_schema'];
-    const handlerCode = typeof args['handler_code'] === 'string' ? args['handler_code'] : undefined;
-    const template = typeof args['template'] === 'string' ? args['template'] : undefined;
-    const requiredPackages = isRecordOfStrings(args['required_packages']) ? args['required_packages'] : undefined;
+    const handlerCode =
+      typeof args['handler_code'] === 'string'
+        ? args['handler_code']
+        : undefined;
+    const template =
+      typeof args['template'] === 'string' ? args['template'] : undefined;
+    const requiredPackages = isRecordOfStrings(args['required_packages'])
+      ? args['required_packages']
+      : undefined;
     const allowUnsafe = args['allow_unsafe'] === true;
     const installDeps = args['install_dependencies'] === true;
 
     if (!BASE_NAME_REGEX.test(baseName)) {
-      return textResponse(`Invalid base_name. Must match ^[a-z0-9_]+$. Received: ${baseName}`);
+      return textResponse(
+        `Invalid base_name. Must match ^[a-z0-9_]+$. Received: ${baseName}`,
+      );
     }
     if (baseName.startsWith('generated_')) {
-      return textResponse("base_name must NOT include the 'generated_' prefix; it is added automatically.");
+      return textResponse(
+        "base_name must NOT include the 'generated_' prefix; it is added automatically.",
+      );
     }
     if (typeof descriptionValue !== 'string' || !descriptionValue.trim()) {
       return textResponse('description must be a non-empty string');
@@ -164,19 +209,25 @@ const tool = {
     const pluginFile = path.join(pluginDir, 'index.ts');
 
     if (!ensureInsideBase(pluginsRoot, pluginDir)) {
-      return textResponse('Path safety check failed. Refusing to write outside src/plugins.');
+      return textResponse(
+        'Path safety check failed. Refusing to write outside src/plugins.',
+      );
     }
 
     try {
       await fs.access(pluginDir);
       return textResponse(`Blocked: directory already exists at ${pluginDir}`);
-    } catch { /* directory doesn't exist, this is expected */ }
+    } catch {
+      /* directory doesn't exist, this is expected */
+    }
 
     try {
       const { toolRegistry } = await import('../../tools/registry.js');
       const existing = toolRegistry.getTool?.(finalName);
       if (existing) {
-        return textResponse(`Blocked: a tool named '${finalName}' already exists in the registry.`);
+        return textResponse(
+          `Blocked: a tool named '${finalName}' already exists in the registry.`,
+        );
       }
     } catch {
       // proceed; directory check above still protects from overwrite
@@ -189,16 +240,23 @@ const tool = {
         const issues = [
           blocking.length ? `Blocking patterns: ${blocking.join(', ')}` : '',
           warnings.length ? `Warnings: ${warnings.join(', ')}` : '',
-        ].filter(Boolean).join('\n');
+        ]
+          .filter(Boolean)
+          .join('\n');
         return textResponse(
           `Unsafe constructs detected in handler_code. Aborting creation.\n${issues}\n\n` +
-          `If you intend to proceed, set allow_unsafe: true and try again.`
+            `If you intend to proceed, set allow_unsafe: true and try again.`,
         );
       }
     }
 
     await fs.mkdir(pluginDir, { recursive: false }).catch(async (err) => {
-      try { await fs.access(pluginDir); throw err; } catch { await fs.mkdir(pluginDir, { recursive: true }); }
+      try {
+        await fs.access(pluginDir);
+        throw err;
+      } catch {
+        await fs.mkdir(pluginDir, { recursive: true });
+      }
     });
 
     let handlerBody = '';
@@ -218,18 +276,20 @@ for (const key of parts) {
     break;
   }
 }
-return [{ type: 'text', text: JSON.stringify({ result: value }, null, 2) }];
+return { content: [{ type: 'text', text: JSON.stringify({ result: value }, null, 2) }] };
       `.trim();
     } else {
       handlerBody = `
-return [{ type: 'text', text: JSON.stringify({ args }, null, 2) }];
+return { content: [{ type: 'text', text: JSON.stringify({ args }, null, 2) }] };
       `.trim();
     }
 
-    const header = "// [generated-tool] This tool was generated by create_mcp_tool";
-    const requiredPackagesExport = requiredPackages && Object.keys(requiredPackages).length
-      ? `export const requiredPackages = ${JSON.stringify(requiredPackages, null, 2)};`
-      : '';
+    const header =
+      '// [generated-tool] This tool was generated by create_mcp_tool';
+    const requiredPackagesExport =
+      requiredPackages && Object.keys(requiredPackages).length
+        ? `export const requiredPackages = ${JSON.stringify(requiredPackages, null, 2)};`
+        : '';
 
     const generatedSource = `${header}
 
@@ -244,9 +304,24 @@ ${indentLines(handlerBody, 4)}
 };
 
 export default tool;
+export const tools = [tool];
 `;
 
-    await fs.writeFile(pluginFile, '"use client";\n' + generatedSource, 'utf8');
+    await fs.writeFile(pluginFile, generatedSource, 'utf8');
+    await fs.writeFile(
+      path.join(pluginDir, 'plugin.json'),
+      `${JSON.stringify(
+        {
+          name: finalName,
+          description: desc,
+          tools: [{ name: finalName, description: desc }],
+          requiredPackages: requiredPackages ?? {},
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
 
     let depsUpdated = false;
     let depsAdded: string[] = [];
@@ -263,7 +338,11 @@ export default tool;
       installAttempted = true;
       const result = await runBunInstall(projectRoot, 120000);
       installOk = result.ok;
-      installNote = result.reason ? result.reason : result.ok ? 'Installed' : `Exit code ${result.code ?? 'unknown'}`;
+      installNote = result.reason
+        ? result.reason
+        : result.ok
+          ? 'Installed'
+          : `Exit code ${result.code ?? 'unknown'}`;
     }
 
     let refreshOk = false;
@@ -282,26 +361,38 @@ export default tool;
       refreshNote = `Registry refresh failed: ${(e as Error).message || String(e)}`;
     }
 
-    const riskNote = handlerCode ? (() => {
-      const { blocking, warnings } = detectDangerousPatterns(handlerCode);
-      if (blocking.length || warnings.length) {
-        return `Unsafe constructs were${allowUnsafe ? '' : ' not'} allowed. Detected: ` +
-               `${[blocking.length ? `blocking: ${blocking.join(', ')}` : '', warnings.length ? `warnings: ${warnings.join(', ')}` : ''].filter(Boolean).join(' | ')}`;
-      }
-      return '';
-    })() : '';
+    const riskNote = handlerCode
+      ? (() => {
+          const { blocking, warnings } = detectDangerousPatterns(handlerCode);
+          if (blocking.length || warnings.length) {
+            return (
+              `Unsafe constructs were${allowUnsafe ? '' : ' not'} allowed. Detected: ` +
+              `${[blocking.length ? `blocking: ${blocking.join(', ')}` : '', warnings.length ? `warnings: ${warnings.join(', ')}` : ''].filter(Boolean).join(' | ')}`
+            );
+          }
+          return '';
+        })()
+      : '';
 
     const summary = [
       `Created plugin: ${pluginFile}`,
       `Tool name: ${finalName}`,
-      depsUpdated ? `Dependencies added: ${depsAdded.join(', ')}` : 'Dependencies: none added',
-      installAttempted ? `bun install attempted -> ${installOk ? 'success' : 'failed'}${installNote ? ` (${installNote})` : ''}` : 'bun install: not attempted',
-      refreshOk ? 'Registry refresh: success' : `Registry refresh: failed${refreshNote ? ` (${refreshNote})` : ''}`,
+      depsUpdated
+        ? `Dependencies added: ${depsAdded.join(', ')}`
+        : 'Dependencies: none added',
+      installAttempted
+        ? `bun install attempted -> ${installOk ? 'success' : 'failed'}${installNote ? ` (${installNote})` : ''}`
+        : 'bun install: not attempted',
+      refreshOk
+        ? 'Registry refresh: success'
+        : `Registry refresh: failed${refreshNote ? ` (${refreshNote})` : ''}`,
       riskNote,
       'Next steps:',
       '- bun lint',
       '- bun typecheck',
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     return textResponse(summary, false);
   },

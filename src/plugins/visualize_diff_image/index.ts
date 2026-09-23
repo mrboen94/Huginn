@@ -1,79 +1,76 @@
 import { html as diffToHtml } from 'diff2html';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
-import { chromium } from 'playwright-core';
+import { chromium } from 'playwright';
 import type { ToolArguments } from '../../tools/types.js';
 
 interface VisualizeDiffArgs {
-    diff: string;
-    format: 'html' | 'image';
-    outputType: 'side-by-side' | 'line-by-line';
+  diff: string;
+  format: 'html' | 'image';
+  outputType: 'side-by-side' | 'line-by-line';
 }
 
 function normalizeArgs(rawArgs: ToolArguments): VisualizeDiffArgs {
-    const diffValue = rawArgs.diff;
-    if (typeof diffValue !== 'string' || diffValue.trim() === '') {
-        throw new Error('Argument "diff" must be a non-empty string');
-    }
+  const diffValue = rawArgs.diff;
+  if (typeof diffValue !== 'string' || diffValue.trim() === '') {
+    throw new Error('Argument "diff" must be a non-empty string');
+  }
 
-    const formatValue = rawArgs.format;
-    const outputValue = rawArgs.outputType;
+  const formatValue = rawArgs.format;
+  const outputValue = rawArgs.outputType;
 
-    const format: 'html' | 'image' = formatValue === 'image' ? 'image' : 'html';
-    const outputType: 'side-by-side' | 'line-by-line' =
-        outputValue === 'line-by-line' ? 'line-by-line' : 'side-by-side';
+  const format: 'html' | 'image' = formatValue === 'image' ? 'image' : 'html';
+  const outputType: 'side-by-side' | 'line-by-line' =
+    outputValue === 'line-by-line' ? 'line-by-line' : 'side-by-side';
 
-    return {
-        diff: diffValue,
-        format,
-        outputType,
-    };
+  return {
+    diff: diffValue,
+    format,
+    outputType,
+  };
 }
 
 export const visualizeDiffTool = {
-    name: 'visualize_diff_image',
-    description: 'Generate HTML or PNG visualization from a unified diff',
-    inputSchema: {
-        type: 'object',
-        properties: {
-            diff: {
-                type: 'string',
-                description: 'Unified diff text',
-            },
-            format: {
-                type: 'string',
-                enum: ['html', 'image'],
-                description: 'Output format',
-                default: 'html',
-            },
-            outputType: {
-                type: 'string',
-                enum: ['side-by-side', 'line-by-line'],
-                description: 'Diff display style',
-                default: 'side-by-side',
-            },
-        },
-        required: ['diff'],
-        additionalProperties: false,
+  name: 'visualize_diff_image',
+  description: 'Generate HTML or PNG visualization from a unified diff',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      diff: {
+        type: 'string',
+        description: 'Unified diff text',
+      },
+      format: {
+        type: 'string',
+        enum: ['html', 'image'],
+        description: 'Output format',
+        default: 'html',
+      },
+      outputType: {
+        type: 'string',
+        enum: ['side-by-side', 'line-by-line'],
+        description: 'Diff display style',
+        default: 'side-by-side',
+      },
     },
+    required: ['diff'],
+    additionalProperties: false,
+  },
 
-    handler: async (
-        args: ToolArguments,
-        signal: AbortSignal,
-    ) => {
-        const { diff, format, outputType } = normalizeArgs(args);
+  handler: async (args: ToolArguments, signal: AbortSignal) => {
+    const { diff, format, outputType } = normalizeArgs(args);
 
-        if (signal.aborted) {
-            throw new Error('Aborted');
-        }
+    if (signal.aborted) {
+      throw new Error('Aborted');
+    }
 
-        const htmlBody = diffToHtml(diff, {
-            drawFileList: true,
-            matching: 'lines',
-            outputFormat: outputType,
-        });
+    const htmlBody = diffToHtml(diff, {
+      drawFileList: true,
+      matching: 'lines',
+      outputFormat: outputType,
+    });
 
-        const fullHtml = `<!DOCTYPE html>
+    const fullHtml = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -89,64 +86,64 @@ ${htmlBody}
 </body>
 </html>`;
 
-        const outputDir = join(process.cwd(), 'out', 'visualize_diff_image');
-        await mkdir(outputDir, { recursive: true });
+    const outputDir = join(process.cwd(), 'out', 'visualize_diff_image');
+    await mkdir(outputDir, { recursive: true });
 
-        if (format === 'html') {
-            const htmlPath = join(outputDir, 'diff.html');
-            await writeFile(htmlPath, fullHtml, 'utf8');
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: `HTML diff generated. Saved to: ${htmlPath}`,
-                    },
-                ],
-            };
-        }
+    if (format === 'html') {
+      const htmlPath = join(outputDir, 'diff.html');
+      await writeFile(htmlPath, fullHtml, 'utf8');
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `HTML diff generated. Saved to: ${htmlPath}`,
+          },
+        ],
+      };
+    }
 
-        let browser: import('playwright-core').Browser | undefined;
+    let browser: import('playwright-core').Browser | undefined;
+    try {
+      browser = await chromium.launch();
+      const page = await browser.newPage();
+
+      if (signal.aborted) {
+        throw new Error('Aborted');
+      }
+
+      await page.setContent(fullHtml, { waitUntil: 'load' });
+
+      if (signal.aborted) {
+        throw new Error('Aborted');
+      }
+
+      const pngPath = join(outputDir, 'diff.png');
+      await page.screenshot({ path: pngPath, fullPage: true });
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `PNG diff generated. Saved to: ${pngPath}`,
+          },
+        ],
+      };
+    } finally {
+      if (browser) {
         try {
-            browser = await chromium.launch();
-            const page = await browser.newPage();
-
-            if (signal.aborted) {
-                throw new Error('Aborted');
-            }
-
-            await page.setContent(fullHtml, { waitUntil: 'load' });
-
-            if (signal.aborted) {
-                throw new Error('Aborted');
-            }
-
-            const pngPath = join(outputDir, 'diff.png');
-            await page.screenshot({ path: pngPath, fullPage: true });
-
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: `PNG diff generated. Saved to: ${pngPath}`,
-                    },
-                ],
-            };
-        } finally {
-            if (browser) {
-                try {
-                    await browser.close();
-                } catch (closeErr) {
-                    void closeErr;
-                }
-            }
+          await browser.close();
+        } catch (closeErr) {
+          void closeErr;
         }
-    },
+      }
+    }
+  },
 };
 
 export const tools = [visualizeDiffTool];
 export default visualizeDiffTool;
 
 export const requiredPackages = {
-    'diff2html': '^3.4.52',
-    'playwright-core': '^1.56.1',
+  diff2html: '^3.4.56',
+  playwright: '^1.55.0',
 };

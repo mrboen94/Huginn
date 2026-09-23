@@ -1,5 +1,11 @@
 // rename_generated_tool (moved into mcp_tooling)
-import { access, mkdir, readFile, rename as fsRename, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  readFile,
+  rename as fsRename,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolArguments } from '../../tools/types.js';
 import { EMPTY_TOOL_ARGS } from '../../tools/types.js';
@@ -30,34 +36,52 @@ const GENERATED_HEADER_MARKERS = [
 
 const tool = {
   name: 'rename_generated_tool',
-  description: 'Rename a generated MCP plugin (generated_*). Updates directory and tool name in source, then refreshes registry.',
+  description:
+    'Rename a generated MCP plugin (generated_*). Updates directory and tool name in source, then refreshes registry.',
   inputSchema: {
     type: 'object',
     additionalProperties: false,
     properties: {
       from_tool_name: { type: 'string', pattern: '^generated_[a-z0-9_]+$' },
       from_base_name: { type: 'string', pattern: '^[a-z0-9_]+$' },
-      to_base_name: { type: 'string', pattern: '^[a-z0-9_]+$' }
+      to_base_name: { type: 'string', pattern: '^[a-z0-9_]+$' },
     },
     anyOf: [
       { required: ['from_tool_name', 'to_base_name'] },
-      { required: ['from_base_name', 'to_base_name'] }
-    ]
+      { required: ['from_base_name', 'to_base_name'] },
+    ],
   },
   handler: async (args: ToolArguments, signal: AbortSignal) => {
     if (signal.aborted) throw new Error('Aborted');
 
-    const fromToolName = typeof args.from_tool_name === 'string' ? args.from_tool_name : undefined;
-    const fromBaseName = typeof args.from_base_name === 'string' ? args.from_base_name : undefined;
-    const toBaseName = typeof args.to_base_name === 'string' ? args.to_base_name : undefined;
+    const fromToolName =
+      typeof args.from_tool_name === 'string' ? args.from_tool_name : undefined;
+    const fromBaseName =
+      typeof args.from_base_name === 'string' ? args.from_base_name : undefined;
+    const toBaseName =
+      typeof args.to_base_name === 'string' ? args.to_base_name : undefined;
 
     if (!toBaseName || !isValidBaseName(toBaseName)) {
-      return { content: [{ type: 'text', text: 'to_base_name must match ^[a-z0-9_]+$' }], isError: true };
+      return {
+        content: [
+          { type: 'text', text: 'to_base_name must match ^[a-z0-9_]+$' },
+        ],
+        isError: true,
+      };
     }
 
-    const fromName = fromToolName ?? (fromBaseName ? `generated_${fromBaseName}` : undefined);
+    const fromName =
+      fromToolName ?? (fromBaseName ? `generated_${fromBaseName}` : undefined);
     if (!fromName || !fromName.startsWith('generated_')) {
-      return { content: [{ type: 'text', text: 'Specify from_tool_name (generated_*) or from_base_name' }], isError: true };
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Specify from_tool_name (generated_*) or from_base_name',
+          },
+        ],
+        isError: true,
+      };
     }
 
     const toName = `generated_${toBaseName}`;
@@ -67,33 +91,67 @@ const tool = {
     const srcDir = path.join(pluginsRoot, fromName);
     const dstDir = path.join(pluginsRoot, toName);
 
-    if (!ensureInsideBase(pluginsRoot, srcDir) || !ensureInsideBase(pluginsRoot, dstDir)) {
-      return { content: [{ type: 'text', text: 'Refusing to operate outside src/plugins.' }], isError: true };
+    if (
+      !ensureInsideBase(pluginsRoot, srcDir) ||
+      !ensureInsideBase(pluginsRoot, dstDir)
+    ) {
+      return {
+        content: [
+          { type: 'text', text: 'Refusing to operate outside src/plugins.' },
+        ],
+        isError: true,
+      };
     }
 
     if (!(await exists(srcDir))) {
-      return { content: [{ type: 'text', text: `Source plugin not found: ${srcDir}` }], isError: true };
+      return {
+        content: [{ type: 'text', text: `Source plugin not found: ${srcDir}` }],
+        isError: true,
+      };
     }
     if (await exists(dstDir)) {
-      return { content: [{ type: 'text', text: `Destination already exists: ${dstDir}` }], isError: true };
+      return {
+        content: [
+          { type: 'text', text: `Destination already exists: ${dstDir}` },
+        ],
+        isError: true,
+      };
     }
 
     const tsPath = path.join(srcDir, 'index.ts');
     const jsPath = path.join(srcDir, 'index.js');
     let filePath = '';
     let src = '';
-    if (await exists(tsPath)) { filePath = tsPath; src = await readFile(tsPath, 'utf8'); }
-    else if (await exists(jsPath)) { filePath = jsPath; src = await readFile(jsPath, 'utf8'); }
-    else return { content: [{ type: 'text', text: 'index.ts/js not found in source plugin' }], isError: true };
+    if (await exists(tsPath)) {
+      filePath = tsPath;
+      src = await readFile(tsPath, 'utf8');
+    } else if (await exists(jsPath)) {
+      filePath = jsPath;
+      src = await readFile(jsPath, 'utf8');
+    } else
+      return {
+        content: [
+          { type: 'text', text: 'index.ts/js not found in source plugin' },
+        ],
+        isError: true,
+      };
 
-    const isGenerated = GENERATED_HEADER_MARKERS.some(m => src.includes(m));
+    const isGenerated = GENERATED_HEADER_MARKERS.some((m) => src.includes(m));
     if (!isGenerated) {
-      return { content: [{ type: 'text', text: 'Refusing to rename: not recognized as a generated tool.' }], isError: true };
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'Refusing to rename: not recognized as a generated tool.',
+          },
+        ],
+        isError: true,
+      };
     }
 
     const updatedSrc = src.replace(
       new RegExp(`name:\\s*['"]${fromName}['"]`),
-      `name: '${toName}'`
+      `name: '${toName}'`,
     );
 
     await writeFile(filePath, updatedSrc, 'utf8');
@@ -101,16 +159,42 @@ const tool = {
     await mkdir(path.dirname(dstDir), { recursive: true });
     await fsRename(srcDir, dstDir);
 
+    const metadataPath = path.join(dstDir, 'plugin.json');
+    if (await exists(metadataPath)) {
+      const metadata = JSON.parse(await readFile(metadataPath, 'utf8')) as {
+        name: string;
+        tools?: Array<{ name: string; description: string }>;
+      };
+      metadata.name = toName;
+      metadata.tools = metadata.tools?.map((entry) =>
+        entry.name === fromName ? { ...entry, name: toName } : entry,
+      );
+      await writeFile(
+        metadataPath,
+        `${JSON.stringify(metadata, null, 2)}\n`,
+        'utf8',
+      );
+    }
+
     try {
       const { toolRegistry } = await import('../../tools/registry.js');
       const refresh = toolRegistry.getTool?.('refresh_plugins');
       if (refresh?.handler) {
         await refresh.handler(EMPTY_TOOL_ARGS, signal);
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
-    return { content: [{ type: 'text', text: `Renamed generated tool: ${fromName} -> ${toName}` }] };
-  }
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Renamed generated tool: ${fromName} -> ${toName}`,
+        },
+      ],
+    };
+  },
 };
 
 export default tool;

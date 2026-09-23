@@ -1,0 +1,14 @@
+{
+  "name": "visualize_diff_image",
+  "description": "Generate HTML or PNG visualizations from unified diffs.",
+  "tools": [
+    {
+      "name": "visualize_diff_image",
+      "description": "Visualize a unified diff"
+    }
+  ],
+  "requiredPackages": {
+    "diff2html": "^3.4.56",
+    "playwright": "^1.55.0"
+  }
+}

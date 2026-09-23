@@ -1,6 +1,7 @@
 {
-  "name": "mcp",
-  "module": "index.ts",
+  "name": "huginn-mcp",
+  "version": "1.1.0",
+  "module": "src/index.ts",
   "type": "module",
   "private": true,
   "scripts": {
@@ -13,25 +14,31 @@
     "format:write": "bun x prettier . --write",
     "test": "bun x vitest --run",
     "install-plugins": "bun scripts/install-plugins.ts",
+    "plugins": "bun scripts/install-plugins.ts",
+    "setup": "bun install && bun plugins --all --yes",
+    "doctor": "bun scripts/doctor.ts",
+    "check": "bun run typecheck && bun run lint && bun run format && bun test",
     "test:watch": "bun x vitest",
     "coverage": "bun x vitest --coverage"
   },
   "devDependencies": {
-    "@eslint/js": "^9.38.0",
-    "@types/bun": "latest",
-    "@types/node": "^24.8.1",
-    "@typescript-eslint/eslint-plugin": "^8.46.1",
-    "@typescript-eslint/parser": "^8.46.1",
-    "eslint": "^9.38.0",
+    "@eslint/js": "^9.39.5",
+    "@types/bun": "^1.4.2",
+    "@types/node": "^24.13.6",
+    "@typescript-eslint/eslint-plugin": "^8.70.1",
+    "@typescript-eslint/parser": "^8.70.1",
+    "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
-    "globals": "^16.4.0",
-    "prettier": "^3.6.2",
-    "vitest": "^3.2.4"
-  },
-  "peerDependencies": {
-    "typescript": "^5.9.3"
+    "globals": "^16.5.0",
+    "prettier": "^3.9.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.20.1"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@fontsource/iosevka": "^5.2.8",
+    "playwright": "^1.55.0",
+    "shiki": "^3.12.2",
+    "diff2html": "^3.4.56"
   }
 }
